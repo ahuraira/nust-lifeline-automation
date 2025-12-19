@@ -52,7 +52,7 @@ The agent does not blindly accept text. It performs a **Three-Way Match**:
 ### The Analysis Pipeline
 1.  **Fetch:** Retrieve `PENDING_HOSTEL` allocations from the database.
 2.  **Contextualize:** Reconstruct the email thread using `getThreadContext()` to provide the AI with the full conversation history.
-3.  **Inference:** `Gemini 1.5` evaluates the reply against the pending items.
+3.  **Inference:** `Gemini 3` evaluates the reply against the pending items.
 4.  **Action:** The Agent returns a structured verdict (`CONFIRMED`, `PARTIAL`, `QUERY`, `AMBIGUOUS`).
 
 ---

@@ -27,7 +27,7 @@ Adopt **Google Apps Script (GAS)** bound to the Operations Spreadsheet.
 **Date:** 2025-11-05
 
 #### Context
-Volunteers require access to "Financial Need" data to allocate funds, but granting them full read access to the master student registry exposes sensitive PII (CNIC, Phone, Address).
+Volunteers require access to "Financial Need" data to allocate funds, but granting them full read access to the master student registry exposes sensitive PII (Phone, Address).
 
 #### Decision
 Physically separate storage into two distinct Drive artifacts:

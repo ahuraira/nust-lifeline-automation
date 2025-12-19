@@ -1,5 +1,5 @@
 /**
- * Analyzes an email body using the Gemini 2.5 Flash API with forced JSON output.
+ * Analyzes an email body using the Gemini 3 Flash API with forced JSON output.
  * @param {string} emailBody The plain text body of the email from the university.
  * @returns {Object|null} A structured object { summary: "...", newStatus: "..." } or null on failure.
  */

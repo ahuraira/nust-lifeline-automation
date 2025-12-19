@@ -19,7 +19,7 @@ graph TD
     subgraph "NUST Lifeline System"
         Sheets[(Google Sheets DB)]
         Script[Apps Script Engine]
-        AI[Gemini 1.5 Agent]
+        AI[Gemini 3 Agent]
         Sidebar[Sidebar UI]
     end
     
@@ -72,10 +72,10 @@ sequenceDiagram
     Note right of Server: Switch to Admin Context
     Server->>SecureDB: Open Spreadsheet (SpreadsheetApp.openById)
     Server->>SecureDB: Fetch Row [12345]
-    SecureDB-->>Server: Return {Name, CNIC, Phone, Address, Need}
+    SecureDB-->>Server: Return {Name, Phone, Address, Need}
     
     Server->>Server: SANITIZE DATA
-    Note right of Server: Remove CNIC, Phone, Address
+    Note right of Server: Remove Phone, Address
     
     Server-->>Vol: Return JSON {Name, Need, School}
     deactivate Server
@@ -119,7 +119,6 @@ erDiagram
     }
 
     STUDENT {
-        string CMS_ID PK
         string Name
         number TotalNormalNeed
         number AmountCleared
@@ -154,7 +153,7 @@ To decouple the allocation process from the verification process, the system use
 
 *   **Runtime:** **Google Apps Script (V8)**. Selected for its managed identity/auth context.
 *   **Data Layer:** **Google Sheets**. Selected for its ubiquity and zero-cost "admin UI".
-*   **AI Layer:** **Google Gemini 1.5 Flash**. Selected for large context window.
+*   **AI Layer:** **Google Gemini 3 Flash**. Selected for large context window.
 
 ---
 

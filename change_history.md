@@ -14,6 +14,9 @@ and this project adheres to loose semantic versioning.
     - Added **Entity Relationship Diagram (ERD)** to `docs/ARCHITECTURE.md` (Schema mapping).
     - Added **Security Sequence Diagram** to `docs/ARCHITECTURE.md` (Visualizing the 'Sanitized Proxy' flow).
     - Added **Watchdog State Machine Diagram** to `docs/AI_WATCHDOG.md` (Process flow).
+- **Content Accuracy:**
+    - Standardized AI Model references to **Gemini 3**.
+    - Removed **CNIC** from data flow diagrams to accurately reflect PII minimization policies.
 
 ## [Version 54] - 2025-12-19
 ### Operations
