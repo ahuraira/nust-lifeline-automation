@@ -7,6 +7,14 @@ and this project adheres to loose semantic versioning.
 
 ## [Unreleased]
 
+## [Version 55] - 2025-12-19
+### Documentation
+- **Visual Architecture Upgrade (Mermaid.js):**
+    - Added **System Context Diagram** to `docs/ARCHITECTURE.md` (High-level data flow).
+    - Added **Entity Relationship Diagram (ERD)** to `docs/ARCHITECTURE.md` (Schema mapping).
+    - Added **Security Sequence Diagram** to `docs/ARCHITECTURE.md` (Visualizing the 'Sanitized Proxy' flow).
+    - Added **Watchdog State Machine Diagram** to `docs/AI_WATCHDOG.md` (Process flow).
+
 ## [Version 54] - 2025-12-19
 ### Operations
 - **Production Migration Guide:**

@@ -2,11 +2,47 @@
 
 > **Scope:** Logic, Prompt Engineering, and Safety Protocols for the AI Agent.
 
-The **Watchdog** is an autonomous agent designed to close the feedback loop between the system and external stakeholders (University Administration). It acts as a semantic reconciler, ensuring that the *intent* of an email matches the *state* of the ledger.
+The **Watchdog** is an autonomous agent designed to close the feedback loop between the system and external stakeholders (University Administration).
+
+## 1. The Watchdog Process Flow
+
+This state diagram illustrates the lifecycle of a verification request, showing how the AI decides between `Verified`, `Query`, and `Ambiguous` states.
+
+```mermaid
+stateDiagram-v2
+    [*] --> PendingHostel: Allocation Created
+    PendingHostel --> EmailSent: System Sends Email
+    
+    state "Watchdog Loop (Every 15m)" as Watchdog {
+        EmailSent --> ScanInbox: Check for Replies
+        ScanInbox --> NoReply: No New Email
+        NoReply --> EmailSent: Wait
+        
+        ScanInbox --> FetchContext: Reply Found!
+        FetchContext --> AI_Analysis: Send Thread + Pending Allocations to Gemini
+        
+        state AI_Analysis {
+            [*] --> ClassifyIntent
+            ClassifyIntent --> Confirmed: "Received"
+            ClassifyIntent --> Query: "Discrepancy / Question"
+            ClassifyIntent --> Ambiguous: "Vague / Unclear"
+        }
+    }
+
+    AI_Analysis --> Verified: Verdict = CONFIRMED
+    AI_Analysis --> AdminAlert: Verdict = QUERY / AMBIGUOUS
+    
+    Verified --> PledgeClosed: If All Allocations Verified
+    Verified --> [*]
+    
+    AdminAlert --> ManualReview: Human Intervention
+    ManualReview --> Verified: Human Confirms
+    ManualReview --> Rejected: Human Rejects
+```
 
 ---
 
-## 1. The Verification Logic
+## 2. The Verification Logic
 
 The agent does not blindly accept text. It performs a **Three-Way Match**:
 1.  **The Pending Ledger:** What did we say we sent? (e.g., "50k for Student A, 20k for Student B").
@@ -16,12 +52,12 @@ The agent does not blindly accept text. It performs a **Three-Way Match**:
 ### The Analysis Pipeline
 1.  **Fetch:** Retrieve `PENDING_HOSTEL` allocations from the database.
 2.  **Contextualize:** Reconstruct the email thread using `getThreadContext()` to provide the AI with the full conversation history.
-3.  **Inference:** `Gemini 3 Flash` evaluates the reply against the pending items.
+3.  **Inference:** `Gemini 1.5` evaluates the reply against the pending items.
 4.  **Action:** The Agent returns a structured verdict (`CONFIRMED`, `PARTIAL`, `QUERY`, `AMBIGUOUS`).
 
 ---
 
-## 2. Prompt Engineering Strategy
+## 3. Prompt Engineering Strategy
 
 We utilize a **Role-Based Prompting** strategy with strict output constraints to ensure determinism.
 
@@ -29,13 +65,12 @@ We utilize a **Role-Based Prompting** strategy with strict output constraints to
 > "You are an automated accounting assistant. Your job is to strictly verify financial transactions based on email evidence."
 
 **Constraints:**
-*   **Strict JSON Output:** The model must return valid JSON, preventing parsing errors.
-*   **Ambiguity Bias:** "If you are not 100% sure, result must be AMBIGUOUS." Use this safety rail to prevent false positives.
-*   **Explicit Id Matching:** The model is instructed to match specific Allocation IDs or CMS IDs, not just general sentiment.
+*   **Strict JSON Output:** The model must return valid JSON.
+*   **Ambiguity Bias:** "If you are not 100% sure, result must be AMBIGUOUS."
 
 ---
 
-## 3. Failure Modes & Safety Rails
+## 4. Failure Modes & Safety Rails
 
 ### A. The "I Don't Know" Fallback
 If the language used by the university is vague (e.g., "Noted", "We will check"), the AI is trained to classify this as **AMBIGUOUS**.
@@ -48,5 +83,3 @@ To prevent the AI from analyzing unrelated emails, the Watchdog ingests **only**
 1.  Match the strict Subject Regex (`Ref: PLEDGE-`).
 2.  Are from a whitelist of domain senders.
 3.  Are NOT already labelled as `Processed`.
-
-This strict scoping ensures the agent operates only on relevant data.
