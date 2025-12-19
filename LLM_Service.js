@@ -138,58 +138,89 @@ function test_analyzeEmail() {
   Logger.log('--- TEST COMPLETE ---');
 }
 
-function analyzeDonorEmail(emailContent, attachmentNames) {
+/**
+ * Analyzes a donor email (and its attachments) to extract intent and transaction details.
+ * Uses Gemini's Multimodal capabilities to "view" receipts.
+ * 
+ * @param {string} emailBody - The plain text body of the email.
+ * @param {GoogleAppsScript.Base.Blob[]} attachments - Array of file blobs (images/PDFs).
+ * @param {Date} pledgeDate - The date the pledge was originally made (Lower Bound).
+ * @param {Date} emailDate - The date the email was received (Upper Bound).
+ * @returns {Object|null} Structured result including category, transfer date, and summary.
+ */
+function analyzeDonorEmail(emailBody, attachments, pledgeDate, emailDate) {
   const FUNC_NAME = 'analyzeDonorEmail';
+
   try {
     const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
-    if (!apiKey) return null;
+    if (!apiKey) {
+      writeLog('ERROR', FUNC_NAME, 'Gemini API Key is not set.');
+      return null;
+    }
 
     // Use Gemini Model from Config
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
-    const prompt = `
-      You are an AI assistant for a Hostel Fund analyzing a donor email.
-      
-      IMPORTANT: The email content is structured in sections:
-      1. "CURRENT EMAIL (Analyze This)" - This is the NEW message from the donor. BASE YOUR DECISION ON THIS ONLY.
-      2. "THREAD HISTORY" (if present) - These are PREVIOUS messages for context. IGNORE questions or concerns in this section.
-      
-      Your Task:
-      1. Categorize ONLY the CURRENT EMAIL:
-         - "RECEIPT_SUBMISSION": The donor is sending proof of payment (e.g., "PFA", "Attached", "Please find attached", or similar short messages with attachments).
-         - "QUESTION": The CURRENT EMAIL contains a new question or concern that needs a reply.
-         - "IRRELEVANT": Spam or unrelated content.
-      
-      2. Identify the Receipt from ATTACHMENTS:
-         - Pick the filename most likely to be a receipt (e.g., "receipt.pdf", "screenshot.jpg").
-         - Ignore icons, signatures, or irrelevant files (e.g., "image001.png", "facebook.png").
-         - If no valid receipt, set 'best_attachment_name' to null.
+    // 1. Prepare Metadata Strings
+    const strEmailDate = Utilities.formatDate(emailDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    const strPledgeDate = Utilities.formatDate(pledgeDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
 
-      3. Draft a Reply (Only if CURRENT EMAIL is a QUESTION):
-         - If category is "QUESTION", draft a polite response.
-         - If category is "RECEIPT_SUBMISSION", leave 'suggested_reply' empty.
+    // Safety check for map
+    const attachmentNames = attachments ? attachments.map(a => a.getName()).join(", ") : "None";
 
-      === EMAIL CONTENT ===
-      ${emailContent}
+    // 2. Prepare Multimedia Payload (Images/PDFs)
+    // This utility ensures base64 encoding matches Gemini's requirements
+    const fileParts = prepareAttachmentsForGemini(attachments);
+
+    // 3. Construct the Robust Prompt
+    const textPrompt = `
+      You are an AI Forensic Accountant for a Student Hostel Fund.
       
-      === ATTACHMENTS IN CURRENT EMAIL ===
-      ${JSON.stringify(attachmentNames)}
+      === CONTEXT ===
+      - We received a Pledge on: ${strPledgeDate}
+      - We received this Email on: ${strEmailDate}
+      - Attached Files: [${attachmentNames}]
+      
+      === YOUR TASK ===
+      1. Analyze the "CURRENT EMAIL" text.
+      2. VISUALLY ANALYZE the attached files (images/PDFs) if provided.
+      3. Extract transaction details and categorize the email.
+
+      === RULES FOR RECEIPT DETECTION ===
+      - Look for banking screenshots, PDF transaction advices, or photos of slips.
+      - EXTRACT the 'Transfer Date' from the receipt image/pdf. 
+      - VALIDATION: The transfer date should logically be on or after the Pledge Date (${strPledgeDate}) and on or before the Email Date (${strEmailDate}).
+      - If multiple dates exist (e.g. "Value Date", "Posting Date"), prefer "Transaction Date".
+      
+      === RULES FOR CATEGORIZATION ===
+      - "RECEIPT_SUBMISSION": The user sent a valid proof of payment file.
+      - "QUESTION": The user is asking a question requiring a human reply.
+      - "IRRELEVANT": Spam or no relevant content.
+
+      === INPUT EMAIL TEXT ===
+      ${emailBody.replace(/"/g, '\\"')}
     `;
 
+    // 4. Assemble Final Payload (Text + Files)
+    // Creating the multipart message structure required by Gemini REST API
+    const parts = [{ text: textPrompt }, ...fileParts];
+
     const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts: parts }],
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
           type: "OBJECT",
           properties: {
             category: { type: "STRING", enum: ["RECEIPT_SUBMISSION", "QUESTION", "IRRELEVANT"] },
-            is_receipt_present: { type: "BOOLEAN" },
-            best_attachment_name: { type: "STRING" },
-            summary: { type: "STRING" },
-            suggested_reply: { type: "STRING" }
+            is_valid_receipt_found: { type: "BOOLEAN", description: "True only if you visually see a banking transaction/slip." },
+            receipt_filename: { type: "STRING", description: "The exact name of the file containing the receipt. Null if none." },
+            extracted_transfer_date: { type: "STRING", description: "YYYY-MM-DD format only. Null if not found." },
+            summary: { type: "STRING", description: "Brief summary of contents." },
+            suggested_reply: { type: "STRING", description: "Draft a reply only if category is QUESTION." },
+            reasoning: { type: "STRING", description: "Why did you choose this date/category?" }
           },
-          required: ["category", "is_receipt_present", "summary"]
+          required: ["category", "is_valid_receipt_found", "summary"]
         }
       }
     };
@@ -201,9 +232,16 @@ function analyzeDonorEmail(emailContent, attachmentNames) {
       muteHttpExceptions: true
     };
 
+    // 5. Call API
     const response = UrlFetchApp.fetch(apiUrl, options);
+
     if (response.getResponseCode() === 200) {
       const jsonResponse = JSON.parse(response.getContentText());
+      // Handle potential safety blocks or empty candidates
+      if (!jsonResponse.candidates || jsonResponse.candidates.length === 0) {
+        writeLog('WARN', FUNC_NAME, 'Gemini returned no candidates (Safety Block?).');
+        return null;
+      }
       const rawText = jsonResponse.candidates[0].content.parts[0].text;
       return JSON.parse(cleanJsonOutput(rawText));
     } else {

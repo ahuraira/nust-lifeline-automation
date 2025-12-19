@@ -281,6 +281,11 @@ function processAllocationTransaction(pledgeId, cmsId, amount) {
     const durationText = donationRowData.data[SHEETS.donations.cols.duration - 1];
     const totalPledgeAmount = getPledgeAmountFromDuration(durationText);
 
+    // --- [NEW] Get Extracted Transfer Date ---
+    // If empty, default to "As per attached receipt"
+    const rawTransferDate = donationRowData.data[SHEETS.donations.cols.actualTransferDate - 1];
+    const transferDate = rawTransferDate ? String(rawTransferDate) : "As per attached receipt";
+
     // --- STEP 2.1: GENERATE ALLOCATION ID EARLY ---
     // We need this ID for the mailto link, so we generate it now instead of at the end.
     const allocationId = `ALLOC-${new Date().getTime()}`;
@@ -292,7 +297,7 @@ function processAllocationTransaction(pledgeId, cmsId, amount) {
       amount: cleanAmount.toLocaleString(),
       cmsId: cmsId,
       pledgeId: pledgeId,
-      allocationId: allocationId, // [NEW] Pass Allocation ID for Copywriting
+      allocationId: allocationId,
       chapterLeadEmail: ccString
     };
 
@@ -309,11 +314,13 @@ function processAllocationTransaction(pledgeId, cmsId, amount) {
       studentName: studentName,
       studentId: cmsId,
       school: studentSchool,
+      // Verification Details
+      transferDate: transferDate, // <--- {{transferDate}}
       // For backward compatibility
       pledgeId: pledgeId,
       cmsId: cmsId,
       allocationDetails: `<ul><li>Student: <strong>${studentName}</strong> (${cmsId}) - Amount: <strong>PKR ${cleanAmount.toLocaleString()}</strong></li></ul>`,
-      mailtoLink: mailtoLink // <--- PASS THE LINK HERE
+      mailtoLink: mailtoLink
     };
 
     const emailContent = createEmailFromTemplate(TEMPLATES.hostelVerification, emailData);
