@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+        body {
+            padding: 15px;
+            font-family: 'Google Sans', sans-serif;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .refresh-btn {
+            background: none;
+            border: none;
+            color: #1a73e8;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            padding: 0;
+        }
+
+        .refresh-btn:hover {
+            text-decoration: underline;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 15px;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #555;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .value {
+            font-size: 14px;
+            color: #000;
+        }
+
+        .balance-card {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 5px;
+        }
+
+        .balance-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .balance-amount {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1a73e8;
+        }
+
+        .error {
+            color: #d93025;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .success {
+            color: #188038;
+            font-size: 14px;
+            text-align: center;
+            display: none;
+        }
+
+        iframe {
+            width: 100%;
+            height: 200px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        button.action {
+            width: 100%;
+            margin-top: 10px;
+            height: 36px;
+            font-weight: bold;
+        }
+
+        input,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <span style="font-size: 16px; font-weight: bold;">Review Allocation</span>
+        <button class="refresh-btn" onclick="refreshData()">↻ Load Selected Row</button>
+    </div>
+
+    <div id="loader">Loading...</div>
+
+    <div id="content" style="display:none;">
+        <!-- Receipt Viewer -->
+        <div class="section">
+            <span class="label">Proof of Payment</span>
+            <div id="receiptContainer">
+                <!-- Iframe will be injected here -->
+            </div>
+            <a id="openLink" href="#" target="_blank" style="font-size: 11px;">Open in new tab</a>
+        </div>
+
+        <!-- Pledge Info -->
+        <div class="section">
+            <span class="label">Pledge Details</span>
+            <div class="value" id="pledgeIdDisplay"></div>
+            <div class="balance-card">
+                <div class="balance-label">Available Balance</div>
+                <div class="balance-amount" id="pledgeBalance">...</div>
+            </div>
+        </div>
+
+        <!-- Allocation Form -->
+        <div class="section">
+            <span class="label">Select Student</span>
+            <input list="students" id="cmsIdInput" placeholder="Type to search CMS ID...">
+            <datalist id="students">
+                <!-- Options injected by JS -->
+            </datalist>
+
+            <div class="balance-card" id="studentCard" style="display:none;">
+                <div class="balance-label">Student Need</div>
+                <div class="balance-amount" id="studentNeed">...</div>
+            </div>
+
+            <span class="label" style="margin-top: 15px;">Amount to Allocate</span>
+            <input type="number" id="amountInput" placeholder="Enter amount">
+            <div id="amountError" class="error">Amount exceeds limit!</div>
+        </div>
+
+        <!-- Actions -->
+        <button class="action share" id="allocateBtn" onclick="allocate()">ALLOCATE FUNDS</button>
+        <div id="successMsg" class="success">Allocation Successful!</div>
+    </div>
+
+    <script>
+        let maxPledge = 0;
+        let maxNeed = 0;
+        let currentPledgeId = '';
+
+        // Initialize
+        window.onload = function () {
+            refreshData();
+        };
+
+        function refreshData() {
+            document.getElementById('content').style.display = 'none';
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('students').innerHTML = ''; // Clear dropdown
+            document.getElementById('amountInput').value = '';
+            document.getElementById('studentNeed').innerText = '...';
+            document.getElementById('studentCard').style.display = 'none';
+            document.getElementById('successMsg').style.display = 'none';
+            document.getElementById('allocateBtn').style.display = 'block';
+            document.getElementById('allocateBtn').disabled = false;
+            document.getElementById('allocateBtn').innerText = "ALLOCATE FUNDS";
+
+            google.script.run
+                .withSuccessHandler(renderSidebar)
+                .withFailureHandler(showError)
+                .getSidebarData();
+        }
+
+        function renderSidebar(data) {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+
+            currentPledgeId = data.pledgeId;
+            maxPledge = data.maxPledgeAvailable;
+
+            // Populate Pledge Info
+            document.getElementById('pledgeIdDisplay').innerText = data.pledgeId;
+            document.getElementById('pledgeBalance').innerText = formatCurrency(maxPledge);
+
+            // Populate Receipt
+            if (data.proofLink) {
+                const previewLink = data.proofLink.replace('/view', '/preview');
+                document.getElementById('receiptContainer').innerHTML = `<iframe src="${previewLink}"></iframe>`;
+                document.getElementById('openLink').href = data.proofLink;
+            } else {
+                document.getElementById('receiptContainer').innerText = "No receipt link found.";
+            }
+
+            // Populate Student Dropdown
+            const datalist = document.getElementById('students');
+            data.students.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s.cmsId;
+                option.label = `Need: ${formatCurrency(s.need)}`; // Show need in label
+                datalist.appendChild(option);
+            });
+
+            // Pre-fill amount if available
+            if (data.currentAmount) {
+                document.getElementById('amountInput').value = data.currentAmount;
+            }
+        }
+
+        // Handle Student Selection
+        document.getElementById('cmsIdInput').addEventListener('change', function () {
+            const cmsId = this.value;
+            if (cmsId) {
+                document.getElementById('studentCard').style.display = 'block';
+                document.getElementById('studentNeed').innerText = "Loading...";
+
+                google.script.run
+                    .withSuccessHandler(function (need) {
+                        maxNeed = need;
+                        if (need === null) {
+                            document.getElementById('studentNeed').innerText = "Student Not Found";
+                            maxNeed = 0;
+                        } else {
+                            document.getElementById('studentNeed').innerText = formatCurrency(need);
+                        }
+                        validateAmount();
+                    })
+                    .getStudentDetails(cmsId);
+            }
+        });
+
+        // Handle Amount Input
+        document.getElementById('amountInput').addEventListener('input', validateAmount);
+
+        function validateAmount() {
+            const amount = parseFloat(document.getElementById('amountInput').value) || 0;
+            const btn = document.getElementById('allocateBtn');
+            const err = document.getElementById('amountError');
+
+            if (amount <= 0 || amount > maxPledge || amount > maxNeed) {
+                btn.disabled = true;
+                err.style.display = 'block';
+                if (amount > maxPledge) err.innerText = "Exceeds Pledge Balance!";
+                else if (amount > maxNeed) err.innerText = "Exceeds Student Need!";
+                else err.innerText = "Invalid Amount";
+            } else {
+                btn.disabled = false;
+                err.style.display = 'none';
+            }
+        }
+
+        function allocate() {
+            const cmsId = document.getElementById('cmsIdInput').value;
+            const amount = document.getElementById('amountInput').value;
+            const btn = document.getElementById('allocateBtn');
+
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+
+            google.script.run
+                .withSuccessHandler(function (success) {
+                    if (success) {
+                        document.getElementById('successMsg').style.display = 'block';
+                        document.getElementById('successMsg').innerText = "Allocation Successful! Select next row & click Refresh.";
+                        btn.style.display = 'none';
+                        // Removed auto-close to keep sidebar open for next transaction
+                    } else {
+                        btn.innerText = "Failed. Try Again.";
+                        btn.disabled = false;
+                    }
+                })
+                .withFailureHandler(showError)
+                .processSidebarAllocation(currentPledgeId, cmsId, amount);
+        }
+
+        function showError(e) {
+            alert("Error: " + e.message);
+        }
+
+        function formatCurrency(num) {
+            return new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(num);
+        }
+    </script>
+</body>
+
+</html>
