@@ -535,3 +535,47 @@ function testEmailSending() {
     Logger.log('FAILURE: Could not capture Message ID.');
   }
 }
+
+/**
+ * Prepares file attachments for the Gemini API (Multimodal).
+ * Converts Blobs to Base64 and formats them for the 'inline_data' part.
+ * 
+ * @param {GoogleAppsScript.Base.Blob[]} attachments - Array of file blobs (PDF/Image).
+ * @returns {Array} Array of content parts for Gemini API.
+ */
+function prepareAttachmentsForGemini(attachments) {
+  const parts = [];
+
+  if (!attachments || attachments.length === 0) return parts;
+
+  const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20MB Safety Limit
+
+  attachments.forEach(blob => {
+    // Basic validation
+    const mimeType = blob.getContentType();
+
+    // Gemini supports images, PDFs, text, etc.
+    // Allow: image/png, image/jpeg, image/webp, application/pdf
+    const validMimes = ['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
+
+    if (validMimes.includes(mimeType)) {
+      if (blob.getBytes().length > MAX_SIZE_BYTES) {
+        console.warn(`Skipping attachment ${blob.getName()} - Too large for inline API call.`);
+        return;
+      }
+
+      const base64Data = Utilities.base64Encode(blob.getBytes());
+
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+    } else {
+      console.warn(`Skipping attachment ${blob.getName()} - Unsupported MIME: ${mimeType}`);
+    }
+  });
+
+  return parts;
+}

@@ -65,7 +65,7 @@ const SHEETS = {
       notes: 17,              // Column Q -> CRITICAL UPDATE: Reflects new column position.
       cmsIdAssigned: 18,      // Column R -> For volunteer to enter student ID.
       amountAllocated: 19,     // Column S -> For volunteer to enter amount.
-      aiComments: 20,          // Column T -> For LLM-generated summaries.
+      actualTransferDate: 20,  // Column T -> Extracted date or "As per attached receipt"
       receiptMessageId: 21,    // Column U -> For Audit Trail (Gmail Message ID)
       pledgeEmailId: 22        // Column V -> Initial Pledge Confirmation ID (for threading)
     }

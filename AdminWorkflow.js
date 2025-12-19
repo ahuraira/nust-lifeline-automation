@@ -61,9 +61,27 @@ function processIncomingReceipts() {
       // Use getThreadContext to properly separate current email from thread history
       const emailContext = getThreadContext(thread);
 
-      // --- AI ANALYSIS ---
-      writeLog('INFO', FUNC_NAME, 'Analyzing email with Gemini (structured format)...', pledgeId);
-      const aiResult = analyzeDonorEmail(emailContext.formattedForLLM, attachmentNames);
+      // --- FETCH ROW DATA EARLY FOR CONTEXT ---
+      const ws = SpreadsheetApp.openById(CONFIG.ssId_operations).getSheetByName(SHEETS.donations.name);
+      const rowData = findRowByValue(ws, SHEETS.donations.cols.pledgeId, pledgeId);
+
+      let pledgeDate = new Date(); // Default fallbacks
+      if (rowData) {
+        // Assume timestamp is in Column 1 (Index 0)
+        const rawDate = rowData.data[SHEETS.donations.cols.timestamp - 1];
+        if (rawDate) pledgeDate = new Date(rawDate);
+      }
+
+      // --- AI ANALYSIS (MULTIMODAL) ---
+      writeLog('INFO', FUNC_NAME, 'Analyzing email with Gemini (structured format + attachments)...', pledgeId);
+
+      // We pass the raw attachments to the LLM service which will handle base64 conversion
+      const aiResult = analyzeDonorEmail(
+        emailContext.formattedForLLM,
+        attachments,
+        pledgeDate,
+        message.getDate() // Email Date
+      );
 
       if (!aiResult) {
         writeLog('WARN', FUNC_NAME, 'AI Analysis failed. Proceeding to manual attachment selection (Fallback Mode).', pledgeId);
@@ -99,8 +117,8 @@ function processIncomingReceipts() {
       // --- HANDLE RECEIPT SUBMISSION ---
       // If AI identified a specific file, try to find it. Otherwise use fallback.
       let receiptFile = null;
-      if (aiResult && aiResult.best_attachment_name) {
-        receiptFile = attachments.find(a => a.getName() === aiResult.best_attachment_name);
+      if (aiResult && aiResult.receipt_filename) { // Use 'receipt_filename' from new schema
+        receiptFile = attachments.find(a => a.getName() === aiResult.receipt_filename);
       }
 
       if (!receiptFile) {
@@ -116,8 +134,7 @@ function processIncomingReceipts() {
 
       writeLog('INFO', FUNC_NAME, `Selected attachment: "${receiptFile.getName()}" with size ${receiptFile.getSize()} bytes.`, pledgeId);
 
-      const ws = SpreadsheetApp.openById(CONFIG.ssId_operations).getSheetByName(SHEETS.donations.name);
-      const rowData = findRowByValue(ws, SHEETS.donations.cols.pledgeId, pledgeId);
+      // (rowData is already fetched above)
 
       if (!rowData) {
         writeLog('WARN', FUNC_NAME, 'Pledge ID found in email, but no matching row in the spreadsheet. Skipping.', pledgeId);
@@ -136,9 +153,13 @@ function processIncomingReceipts() {
       // Use 'id:' prefix for Gmail API IDs (Thread/Message IDs)
       ws.getRange(rowData.row, SHEETS.donations.cols.receiptMessageId).setValue(formatIdForSheet(message.getId()));
 
+      // --- NEW: WRITE EXTRACTED TRANSFER DATE ---
+      const transferDate = aiResult && aiResult.extracted_transfer_date ? aiResult.extracted_transfer_date : "As per attached receipt";
+      ws.getRange(rowData.row, SHEETS.donations.cols.actualTransferDate).setValue(transferDate);
+
       thread.addLabel(labelProcessed).removeLabel(labelToProcess);
 
-      writeLog('SUCCESS', FUNC_NAME, `Successfully processed receipt. File saved to Drive: ${newFileName}`, pledgeId);
+      writeLog('SUCCESS', FUNC_NAME, `Successfully processed receipt. File saved to Drive: ${newFileName}. Date extracted: ${transferDate}`, pledgeId);
 
       logAuditEvent(
         'SYSTEM',

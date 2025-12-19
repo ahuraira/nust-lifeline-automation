@@ -7,6 +7,14 @@ and this project adheres to loose semantic versioning.
 
 ## [Unreleased]
 
+## [Version 56] - 2025-12-19
+### Intelligence
+- **Multimodal Receipt Analysis:**
+    - Upgraded `LLM_Service.js` to accept image/PDF attachments.
+    - Implemented **Forensic Accountant** prompt logic to verify receipts visually.
+    - Added extraction of **"Actual Transfer Date"** directly from banking slips.
+    - Updated `AdminWorkflow.js` to store extracted dates in the `actualTransferDate` column.
+
 ## [Version 55] - 2025-12-19
 ### Documentation
 - **Visual Architecture Upgrade (Mermaid.js):**

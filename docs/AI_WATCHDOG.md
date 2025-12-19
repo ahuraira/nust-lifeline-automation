@@ -49,11 +49,13 @@ The agent does not blindly accept text. It performs a **Three-Way Match**:
 2.  **The University Reply:** What did they say they received? (e.g., "Received for A. Student B is unknown.").
 3.  **The Context:** The full email thread history.
 
-### The Analysis Pipeline
-1.  **Fetch:** Retrieve `PENDING_HOSTEL` allocations from the database.
-2.  **Contextualize:** Reconstruct the email thread using `getThreadContext()` to provide the AI with the full conversation history.
-3.  **Inference:** `Gemini 3` evaluates the reply against the pending items.
-4.  **Action:** The Agent returns a structured verdict (`CONFIRMED`, `PARTIAL`, `QUERY`, `AMBIGUOUS`).
+### 2.1 Multimodal Receipt Verification (New)
+The agent now possesses **Computer Vision** capabilities (`Gemini 3`). When a donor sends a payment receipt:
+1.  **Visual Extraction:** The AI "looks" at the PDF/Image attachment.
+2.  **Date Validation:** It extracts the *Actual Transfer Date* from the banking slip.
+3.  **Cross-Ref:** It ensures this date falls between the **Pledge Date** and **Email Date**.
+    *   *Why?* To prevent the AI from picking up a random date (like "Account Opened: 2020") or a Future Date.
+4.  **Forensic Check:** It looks for keywords like "Transfer Successful," "Transaction ID," or "Debit Advice."
 
 ---
 
