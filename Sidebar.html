@@ -6,291 +6,292 @@
     <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
     <style>
         body {
-            padding: 15px;
+            padding: 10px;
             font-family: 'Google Sans', sans-serif;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .refresh-btn {
-            background: none;
-            border: none;
-            color: #1a73e8;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: bold;
-            padding: 0;
-        }
-
-        .refresh-btn:hover {
-            text-decoration: underline;
         }
 
         .section {
             margin-bottom: 20px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #ddd;
             padding-bottom: 15px;
         }
 
-        .label {
-            font-weight: bold;
-            color: #555;
-            display: block;
-            margin-bottom: 5px;
+        .scroll-box {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 5px;
         }
 
-        .value {
-            font-size: 14px;
-            color: #000;
+        .pledge-item {
+            display: flex;
+            align-items: center;
+            padding: 4px;
+            border-bottom: 1px solid #eee;
+            font-size: 12px;
         }
 
-        .balance-card {
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 8px;
-            margin-top: 5px;
+        .pledge-item:last-child {
+            border-bottom: none;
         }
 
-        .balance-label {
-            font-size: 11px;
-            color: #666;
-            text-transform: uppercase;
+        .pledge-item input {
+            margin-right: 8px;
         }
 
-        .balance-amount {
-            font-size: 18px;
+        .pledge-info {
+            flex-grow: 1;
+        }
+
+        .pledge-amt {
             font-weight: bold;
             color: #1a73e8;
         }
 
-        .error {
-            color: #d93025;
-            font-size: 12px;
-            margin-top: 5px;
-            display: none;
-        }
-
-        .success {
-            color: #188038;
-            font-size: 14px;
-            text-align: center;
-            display: none;
+        /* Dynamic Preview Area */
+        #previewArea {
+            margin-top: 10px;
         }
 
         iframe {
             width: 100%;
-            height: 200px;
+            height: 180px;
+            border: 1px solid #eee;
+        }
+
+        .mini-table {
+            width: 100%;
+            font-size: 11px;
+            border-collapse: collapse;
+        }
+
+        .mini-table th,
+        .mini-table td {
             border: 1px solid #ddd;
+            padding: 4px;
+        }
+
+        .total-bar {
+            background: #e8f0fe;
+            color: #1a73e8;
+            padding: 10px;
+            font-weight: bold;
+            text-align: center;
             border-radius: 4px;
+            margin: 10px 0;
         }
 
         button.action {
             width: 100%;
-            margin-top: 10px;
             height: 36px;
             font-weight: bold;
         }
 
-        input,
-        select {
-            width: 100%;
-            box-sizing: border-box;
-            margin-bottom: 10px;
+        .error {
+            color: red;
+            font-size: 11px;
+            display: none;
         }
     </style>
 </head>
 
 <body>
-    <div class="header">
-        <span style="font-size: 16px; font-weight: bold;">Review Allocation</span>
-        <button class="refresh-btn" onclick="refreshData()">↻ Load Selected Row</button>
+
+    <!-- 1. PLEDGE PICKER -->
+    <div class="section">
+        <div class="header">Select Pledges (Available Funds)</div>
+        <div id="pledgeList" class="scroll-box">
+            Loading funds...
+        </div>
+        <div class="total-bar">
+            Selected Total: <span id="totalSelected">0</span>
+        </div>
     </div>
 
-    <div id="loader">Loading...</div>
-
-    <div id="content" style="display:none;">
-        <!-- Receipt Viewer -->
-        <div class="section">
-            <span class="label">Proof of Payment</span>
-            <div id="receiptContainer">
-                <!-- Iframe will be injected here -->
-            </div>
-            <a id="openLink" href="#" target="_blank" style="font-size: 11px;">Open in new tab</a>
-        </div>
-
-        <!-- Pledge Info -->
-        <div class="section">
-            <span class="label">Pledge Details</span>
-            <div class="value" id="pledgeIdDisplay"></div>
-            <div class="balance-card">
-                <div class="balance-label">Available Balance</div>
-                <div class="balance-amount" id="pledgeBalance">...</div>
-            </div>
-        </div>
-
-        <!-- Allocation Form -->
-        <div class="section">
-            <span class="label">Select Student</span>
-            <input list="students" id="cmsIdInput" placeholder="Type to search CMS ID...">
-            <datalist id="students">
-                <!-- Options injected by JS -->
-            </datalist>
-
-            <div class="balance-card" id="studentCard" style="display:none;">
-                <div class="balance-label">Student Need</div>
-                <div class="balance-amount" id="studentNeed">...</div>
-            </div>
-
-            <span class="label" style="margin-top: 15px;">Amount to Allocate</span>
-            <input type="number" id="amountInput" placeholder="Enter amount">
-            <div id="amountError" class="error">Amount exceeds limit!</div>
-        </div>
-
-        <!-- Actions -->
-        <button class="action share" id="allocateBtn" onclick="allocate()">ALLOCATE FUNDS</button>
-        <div id="successMsg" class="success">Allocation Successful!</div>
+    <!-- 2. DYNAMIC PREVIEW -->
+    <div class="section" id="previewSection" style="display:none;">
+        <div class="header">Proof of Payment</div>
+        <div id="previewArea"></div> <!-- Iframe or Table goes here -->
     </div>
+
+    <!-- 3. STUDENT SELECTOR -->
+    <div class="section">
+        <div class="header">Allocate To Student</div>
+        <input list="studentList" id="cmsInput" placeholder="Search CMS ID..." style="width:100%">
+        <datalist id="studentList"></datalist>
+        <div style="font-size:12px; color:#666; margin-top:4px;">
+            Student Need: <span id="studentNeed">--</span>
+        </div>
+    </div>
+
+    <!-- 4. ACTION -->
+    <button class="action share" id="btnAllocate" onclick="runBatchAllocation()">ALLOCATE BATCH</button>
+    <div id="msg" class="error"></div>
 
     <script>
-        let maxPledge = 0;
-        let maxNeed = 0;
-        let currentPledgeId = '';
+        let allPledges = [];
+        let selectedPledges = [];
 
-        // Initialize
         window.onload = function () {
-            refreshData();
+            google.script.run.withSuccessHandler(initUI).getAvailablePledgesForSidebar();
         };
 
-        function refreshData() {
-            document.getElementById('content').style.display = 'none';
-            document.getElementById('loader').style.display = 'block';
-            document.getElementById('students').innerHTML = ''; // Clear dropdown
-            document.getElementById('amountInput').value = '';
-            document.getElementById('studentNeed').innerText = '...';
-            document.getElementById('studentCard').style.display = 'none';
-            document.getElementById('successMsg').style.display = 'none';
-            document.getElementById('allocateBtn').style.display = 'block';
-            document.getElementById('allocateBtn').disabled = false;
-            document.getElementById('allocateBtn').innerText = "ALLOCATE FUNDS";
+        function initUI(data) {
+            allPledges = data.pledges;
+            renderPledgeList(allPledges);
 
-            google.script.run
-                .withSuccessHandler(renderSidebar)
-                .withFailureHandler(showError)
-                .getSidebarData();
-        }
-
-        function renderSidebar(data) {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('content').style.display = 'block';
-
-            currentPledgeId = data.pledgeId;
-            maxPledge = data.maxPledgeAvailable;
-
-            // Populate Pledge Info
-            document.getElementById('pledgeIdDisplay').innerText = data.pledgeId;
-            document.getElementById('pledgeBalance').innerText = formatCurrency(maxPledge);
-
-            // Populate Receipt
-            if (data.proofLink) {
-                const previewLink = data.proofLink.replace('/view', '/preview');
-                document.getElementById('receiptContainer').innerHTML = `<iframe src="${previewLink}"></iframe>`;
-                document.getElementById('openLink').href = data.proofLink;
-            } else {
-                document.getElementById('receiptContainer').innerText = "No receipt link found.";
-            }
-
-            // Populate Student Dropdown
-            const datalist = document.getElementById('students');
+            // Populate Students
+            const dl = document.getElementById('studentList');
             data.students.forEach(s => {
-                const option = document.createElement('option');
-                option.value = s.cmsId;
-                option.label = `Need: ${formatCurrency(s.need)}`; // Show need in label
-                datalist.appendChild(option);
+                const opt = document.createElement('option');
+                opt.value = s.cmsId;
+                opt.label = `Need: ${s.need.toLocaleString()}`;
+                dl.appendChild(opt);
             });
-
-            // Pre-fill amount if available
-            if (data.currentAmount) {
-                document.getElementById('amountInput').value = data.currentAmount;
-            }
         }
 
-        // Handle Student Selection
-        document.getElementById('cmsIdInput').addEventListener('change', function () {
-            const cmsId = this.value;
-            if (cmsId) {
-                document.getElementById('studentCard').style.display = 'block';
-                document.getElementById('studentNeed').innerText = "Loading...";
+        function renderPledgeList(list) {
+            const container = document.getElementById('pledgeList');
+            container.innerHTML = '';
 
-                google.script.run
-                    .withSuccessHandler(function (need) {
-                        maxNeed = need;
-                        if (need === null) {
-                            document.getElementById('studentNeed').innerText = "Student Not Found";
-                            maxNeed = 0;
-                        } else {
-                            document.getElementById('studentNeed').innerText = formatCurrency(need);
-                        }
-                        validateAmount();
-                    })
-                    .getStudentDetails(cmsId);
+            if (list.length === 0) {
+                container.innerHTML = '<div style="padding:10px">No funds available.</div>';
+                return;
             }
-        });
 
-        // Handle Amount Input
-        document.getElementById('amountInput').addEventListener('input', validateAmount);
+            list.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'pledge-item';
+                div.innerHTML = `
+                    <input type="checkbox" value="${p.id}" onchange="updateSelection(this, '${p.id}', ${p.amount})">
+                    <div class="pledge-info">
+                        <div>${p.name}</div>
+                        <div style="color:#666; font-size:10px;">${p.id}</div>
+                    </div>
+                    <input type="number" id="amt_${p.id}" value="${p.amount}" max="${p.amount}" min="1" 
+                           style="width: 70px; font-size:11px;" onchange="updateAmount('${p.id}')">
+                `;
+                container.appendChild(div);
+            });
+        }
 
-        function validateAmount() {
-            const amount = parseFloat(document.getElementById('amountInput').value) || 0;
-            const btn = document.getElementById('allocateBtn');
-            const err = document.getElementById('amountError');
+        function updateSelection(checkbox, pId, maxAmt) {
+            const amtInput = document.getElementById(`amt_${pId}`);
 
-            if (amount <= 0 || amount > maxPledge || amount > maxNeed) {
-                btn.disabled = true;
-                err.style.display = 'block';
-                if (amount > maxPledge) err.innerText = "Exceeds Pledge Balance!";
-                else if (amount > maxNeed) err.innerText = "Exceeds Student Need!";
-                else err.innerText = "Invalid Amount";
+            if (checkbox.checked) {
+                // Add to selection using current input value
+                const currentVal = Number(amtInput.value);
+                const pData = allPledges.find(p => p.id === pId);
+                // Create a copy with the manual amount
+                selectedPledges.push({ ...pData, amount: currentVal });
             } else {
-                btn.disabled = false;
-                err.style.display = 'none';
+                // Remove
+                selectedPledges = selectedPledges.filter(p => p.id !== pId);
+            }
+            renderPreview();
+        }
+
+        function updateAmount(pId) {
+            // Find if this pledge is currently checked
+            const idx = selectedPledges.findIndex(p => p.id === pId);
+            if (idx !== -1) {
+                const amtInput = document.getElementById(`amt_${pId}`);
+                let val = Number(amtInput.value);
+                const max = Number(amtInput.getAttribute('max'));
+
+                // Enforce max
+                if (val > max) {
+                    val = max;
+                    amtInput.value = max;
+                }
+
+                selectedPledges[idx].amount = val;
+                renderPreview();
             }
         }
 
-        function allocate() {
-            const cmsId = document.getElementById('cmsIdInput').value;
-            const amount = document.getElementById('amountInput').value;
-            const btn = document.getElementById('allocateBtn');
+        // ... renderPreview remains mostly same but uses p.amount ...
 
+        function renderPreview() {
+            const area = document.getElementById('previewArea');
+            const sec = document.getElementById('previewSection');
+            const totalDisplay = document.getElementById('totalSelected');
+
+            // Update Total
+            const total = selectedPledges.reduce((sum, p) => sum + p.amount, 0);
+            totalDisplay.innerText = total.toLocaleString();
+
+            if (selectedPledges.length === 0) {
+                sec.style.display = 'none';
+                return;
+            }
+
+            sec.style.display = 'block';
+
+            // DYNAMIC VIEW LOGIC
+            if (selectedPledges.length === 1) {
+                // Show Single Iframe
+                const link = selectedPledges[0].proofLink.replace('/view', '/preview');
+                area.innerHTML = `<iframe src="${link}"></iframe>`;
+            } else {
+                // Show Table for Multiple
+                let html = `<table class="mini-table"><tr><th>Donor</th><th>Ref</th><th>Alloc</th><th>Receipt</th></tr>`;
+                selectedPledges.forEach(p => {
+                    html += `<tr>
+                        <td>${p.name}</td>
+                        <td>${p.id}</td>
+                        <td>${p.amount.toLocaleString()}</td> 
+                        <td><a href="${p.proofLink}" target="_blank">View</a></td>
+                    </tr>`;
+                });
+                html += `</table>`;
+
+                if (selectedPledges.length > 5) {
+                    html += `<div style="color:orange; font-size:10px; margin-top:5px;">⚠️ High volume: Mailto link might be truncated.</div>`;
+                }
+                area.innerHTML = html;
+            }
+        }
+
+        function runBatchAllocation() {
+            const cmsId = document.getElementById('cmsInput').value;
+            const btn = document.getElementById('btnAllocate');
+            const msg = document.getElementById('msg');
+
+            if (!cmsId || selectedPledges.length === 0) {
+                msg.style.display = 'block';
+                msg.innerText = "Please select at least one pledge and a student.";
+                return;
+            }
+
+            // Lock UI
             btn.disabled = true;
             btn.innerText = "Processing...";
+            msg.style.display = 'none';
+
+            // Send Objects {id, amount} instead of strings
+            const pledgePayload = selectedPledges.map(p => ({
+                id: p.id,
+                amount: p.amount
+            }));
 
             google.script.run
-                .withSuccessHandler(function (success) {
-                    if (success) {
-                        document.getElementById('successMsg').style.display = 'block';
-                        document.getElementById('successMsg').innerText = "Allocation Successful! Select next row & click Refresh.";
-                        btn.style.display = 'none';
-                        // Removed auto-close to keep sidebar open for next transaction
-                    } else {
-                        btn.innerText = "Failed. Try Again.";
-                        btn.disabled = false;
-                    }
+                .withSuccessHandler(() => {
+                    btn.innerText = "Success!";
+                    msg.style.display = 'block';
+                    msg.style.color = 'green';
+                    msg.innerText = "Batch Processed & Email Generated.";
+                    setTimeout(function () { window.onload(); }, 2000); // Reload
                 })
-                .withFailureHandler(showError)
-                .processSidebarAllocation(currentPledgeId, cmsId, amount);
-        }
-
-        function showError(e) {
-            alert("Error: " + e.message);
-        }
-
-        function formatCurrency(num) {
-            return new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(num);
+                .withFailureHandler((e) => {
+                    btn.disabled = false;
+                    btn.innerText = "ALLOCATE BATCH";
+                    msg.style.display = 'block';
+                    msg.style.color = 'red';
+                    msg.innerText = e.message;
+                })
+                .processBatchAllocation(pledgePayload, cmsId);
         }
     </script>
 </body>

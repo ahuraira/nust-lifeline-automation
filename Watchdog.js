@@ -22,7 +22,7 @@ function runWatchdog() {
     // - Are from university domains (or specific addresses)
     // - Have our "Ref:" pattern in subject (from generateHostelReplyLink)
     // - Are NOT labeled processed
-    const query = `from:(${EMAILS.ddHostels} OR ${EMAILS.uao} OR "finance.university.edu") subject:("Ref: PLEDGE-") -label:Watchdog/Processed -label:Watchdog/Manual-Review`;
+    const query = `from:(${EMAILS.ddHostels} OR ${EMAILS.uao} OR "finance.university.edu") subject:("Ref: PLEDGE-" OR "Ref: BATCH-") -label:Watchdog/Processed -label:Watchdog/Manual-Review`;
 
     const threads = GmailApp.search(query, 0, 10);
     if (threads.length === 0) {
@@ -52,20 +52,32 @@ function processThread(thread, openAllocationsMap, processedLabel, manualLabel) 
     // Robustness: Try to get RFC ID, fallback to API ID
     const lastMessageId = getRfcIdFromMessage(lastMessage);
 
-    // Extract Pledge ID from Subject
+    // Context Extraction: PLEDGE-ID or BATCH-ID
     const pledgeIdMatch = subject.match(/PLEDGE-\d{4}-\d+/);
-    if (!pledgeIdMatch) {
-        writeLog('WARN', FUNC_NAME, `Thread subject "${subject}" is missing Pledge ID. Skipping.`);
-        thread.addLabel(manualLabel); // Needs manual look
+    const batchIdMatch = subject.match(/BATCH-\d+/);
+
+    let contextId = "";
+    let pendingAllocations = [];
+
+    if (batchIdMatch) {
+        contextId = batchIdMatch[0];
+        // Fetch allocations by Batch ID (New Helper)
+        pendingAllocations = getOpenAllocationsByBatchId(contextId);
+    } else if (pledgeIdMatch) {
+        contextId = pledgeIdMatch[0];
+        // Fetch allocations by Pledge ID (Existing Map)
+        pendingAllocations = openAllocationsMap.get(contextId);
+    } else {
+        writeLog('WARN', FUNC_NAME, `Thread subject "${subject}" is missing Pledge/Batch ID. Skipping.`);
+        thread.addLabel(manualLabel);
         return;
     }
-    const pledgeId = pledgeIdMatch[0];
 
     // Get Pending Allocations for this Pledge
-    const pendingAllocations = openAllocationsMap.get(pledgeId);
+    // (Already fetched above)
 
     if (!pendingAllocations || pendingAllocations.length === 0) {
-        writeLog('WARN', FUNC_NAME, `Received reply for ${pledgeId} but no PENDING allocations found in sheet. Already closed?`);
+        writeLog('WARN', FUNC_NAME, `Received reply for ${contextId} but no PENDING allocations found in sheet. Already closed?`);
         thread.addLabel(processedLabel); // Mark processed so we don't loop
         return;
     }
@@ -74,29 +86,29 @@ function processThread(thread, openAllocationsMap, processedLabel, manualLabel) 
     // Get full thread context for the AI
     const threadContext = getThreadContext(thread).formattedForLLM;
 
-    writeLog('INFO', FUNC_NAME, `Analyzing reply for ${pledgeId} with ${pendingAllocations.length} pending allocations.`);
+    writeLog('INFO', FUNC_NAME, `Analyzing reply for ${contextId} with ${pendingAllocations.length} pending allocations.`);
 
     // Call LLM
     const analysis = analyzeHostelReply(threadContext, pendingAllocations);
 
     if (!analysis) {
-        writeLog('ERROR', FUNC_NAME, 'AI Analysis failed (returned null).', pledgeId);
+        writeLog('ERROR', FUNC_NAME, 'AI Analysis failed (returned null).', contextId);
         return; // Do not label processed, retry next time
     }
 
-    writeLog('INFO', FUNC_NAME, `AI Verdict: ${analysis.status}. Confirmed: ${JSON.stringify(analysis.confirmedAllocIds)}`, pledgeId);
+    writeLog('INFO', FUNC_NAME, `AI Verdict: ${analysis.status}. Confirmed: ${JSON.stringify(analysis.confirmedAllocIds)}`, contextId);
 
     // --- EXECUTION ---
     if (analysis.status === 'AMBIGUOUS' || analysis.status === 'QUERY') {
         // Safety Net: If AI is unsure or there is a query, alert the human.
         thread.addLabel(manualLabel);
         thread.removeLabel(processedLabel); // Ensure it's not marked done
-        sendAlertEmail(pledgeId, analysis, thread.getPermalink());
+        sendAlertEmail(contextId, analysis, thread.getPermalink());
 
         logAuditEvent(
             'SYSTEM/Watchdog',
             'ALERT',
-            pledgeId,
+            contextId,
             'Ambiguous Hostel Reply - Flagged for Manual Review',
             '',
             '',
@@ -114,7 +126,15 @@ function processThread(thread, openAllocationsMap, processedLabel, manualLabel) 
             SpreadsheetApp.flush();
 
             // Update the main Pledge Status (Derived Logic)
-            updatePledgeStatus(pledgeId);
+            // Note: If Batch, we might need to update MULTIPLE pledges.
+            // Simplified: The updateAllocations function returns confirmed IDs.
+            // We should find unique Pledges from confirmed IDs and update them.
+            // Existing updatePledgeStatus logic might need PledgeID.
+            // For now, let's skip auto-closing Pledge Status for Batches to be safe, 
+            // OR iterate through pendingAllocations to get unique Pledge IDs.
+
+            const uniquePledges = [...new Set(pendingAllocations.map(a => a.pledgeId))];
+            uniquePledges.forEach(pId => updatePledgeStatus(pId));
         }
     }
 }
@@ -254,4 +274,35 @@ function sendAlertEmail(pledgeId, analysis, link) {
         subject: subject,
         htmlBody: body
     });
+}
+
+/**
+ * Helper: Fetches pending allocations for a specific BATCH ID.
+ * @param {string} batchId
+ * @returns {Array} List of allocation objects.
+ */
+function getOpenAllocationsByBatchId(batchId) {
+    const allocWs = SpreadsheetApp.openById(CONFIG.ssId_operations).getSheetByName(SHEETS.allocations.name);
+    const data = allocWs.getDataRange().getValues();
+    const list = [];
+
+    // Col 18 = Batch ID (Index 17)
+    // Col 7 = Status (Index 6)
+    const BATCH_COL_IDX = 17;
+    const STATUS_COL_IDX = 6;
+
+    for (let i = 1; i < data.length; i++) {
+        const rowBatchId = String(data[i][BATCH_COL_IDX]);
+        const status = data[i][STATUS_COL_IDX];
+
+        if (rowBatchId === String(batchId) && status === STATUS.allocation.PENDING_HOSTEL) {
+            list.push({
+                allocId: data[i][SHEETS.allocations.cols.allocId - 1],
+                cms: data[i][SHEETS.allocations.cols.cmsId - 1],
+                amount: data[i][SHEETS.allocations.cols.amount - 1],
+                pledgeId: data[i][SHEETS.allocations.cols.pledgeId - 1] // Needed for Pledge Status update
+            });
+        }
+    }
+    return list;
 }

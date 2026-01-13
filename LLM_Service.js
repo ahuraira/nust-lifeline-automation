@@ -146,9 +146,10 @@ function test_analyzeEmail() {
  * @param {GoogleAppsScript.Base.Blob[]} attachments - Array of file blobs (images/PDFs).
  * @param {Date} pledgeDate - The date the pledge was originally made (Lower Bound).
  * @param {Date} emailDate - The date the email was received (Upper Bound).
+ * @param {number} pledgedAmount - The expected amount (for context).
  * @returns {Object|null} Structured result including category, transfer date, and summary.
  */
-function analyzeDonorEmail(emailBody, attachments, pledgeDate, emailDate) {
+function analyzeDonorEmail(emailBody, attachments, pledgeDate, emailDate, pledgedAmount) {
   const FUNC_NAME = 'analyzeDonorEmail';
 
   try {
@@ -177,32 +178,35 @@ function analyzeDonorEmail(emailBody, attachments, pledgeDate, emailDate) {
       You are an AI Forensic Accountant for a Student Hostel Fund.
       
       === CONTEXT ===
-      - We received a Pledge on: ${strPledgeDate}
-      - We received this Email on: ${strEmailDate}
+      - PLEDGE AMOUNT: ${pledgedAmount} (Expected)
+      - Pledge Date: ${strPledgeDate}
+      - Email Date: ${strEmailDate}
       - Attached Files: [${attachmentNames}]
       
       === YOUR TASK ===
-      1. Analyze the "CURRENT EMAIL" text.
-      2. VISUALLY ANALYZE the attached files (images/PDFs) if provided.
-      3. Extract transaction details and categorize the email.
-
-      === RULES FOR RECEIPT DETECTION ===
-      - Look for banking screenshots, PDF transaction advices, or photos of slips.
-      - EXTRACT the 'Transfer Date' from the receipt image/pdf. 
-      - VALIDATION: The transfer date should logically be on or after the Pledge Date (${strPledgeDate}) and on or before the Email Date (${strEmailDate}).
-      - If multiple dates exist (e.g. "Value Date", "Posting Date"), prefer "Transaction Date".
+      1. Analyze the "CURRENT EMAIL" text to find the "DECLARED AMOUNT" (what the donor SAYS they sent).
+      2. VISUALLY ANALYZE the attached files (images/PDFs) to find PROOF OF PAYMENT.
+      3. Extract transaction details for *each* valid receipt found.
       
-      === RULES FOR CATEGORIZATION ===
-      - "RECEIPT_SUBMISSION": The user sent a valid proof of payment file.
-      - "QUESTION": The user is asking a question requiring a human reply.
-      - "IRRELEVANT": Spam or no relevant content.
+      === RULES FOR FORENSIC VERIFICATION ===
+      - **Amount Extraction**: Look for the final numeric amount. Ignore currency symbols if possible, but note if it's NOT PKR.
+      - **Matching**: Compare extracted amount with PLEDGE AMOUNT. 
+      - **Dates**: Transfer date must be somewhat close to Pledge/Email Date.
+      - **Confidence**: 
+         - Name: Check if Sender Name (from Image) matches Donor Name (Unknown/Context).
+         - Account: Check if destination account matches 'NUST' or 'Hostel Fund'.
+      - **Multiple Receipts**: If multiple images show different transactions, list them all. If they are duplicates, only list one.
+      
+      === CATEGORIZATION ===
+      - "RECEIPT_SUBMISSION": Found at least one valid receipt.
+      - "QUESTION": User is asking a question.
+      - "IRRELEVANT": Spam/Junk.
 
       === INPUT EMAIL TEXT ===
       ${emailBody.replace(/"/g, '\\"')}
     `;
 
     // 4. Assemble Final Payload (Text + Files)
-    // Creating the multipart message structure required by Gemini REST API
     const parts = [{ text: textPrompt }, ...fileParts];
 
     const payload = {
@@ -213,14 +217,37 @@ function analyzeDonorEmail(emailBody, attachments, pledgeDate, emailDate) {
           type: "OBJECT",
           properties: {
             category: { type: "STRING", enum: ["RECEIPT_SUBMISSION", "QUESTION", "IRRELEVANT"] },
-            is_valid_receipt_found: { type: "BOOLEAN", description: "True only if you visually see a banking transaction/slip." },
-            receipt_filename: { type: "STRING", description: "The exact name of the file containing the receipt. Null if none." },
-            extracted_transfer_date: { type: "STRING", description: "YYYY-MM-DD format only. Null if not found." },
             summary: { type: "STRING", description: "Brief summary of contents." },
-            suggested_reply: { type: "STRING", description: "Draft a reply only if category is QUESTION." },
-            reasoning: { type: "STRING", description: "Why did you choose this date/category?" }
+
+            // --- ARRAY OF VERIFIED RECEIPTS ---
+            valid_receipts: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  filename: { type: "STRING" },
+                  amount: { type: "NUMBER", description: "Numeric amount extracted from image." },
+                  amount_declared: { type: "NUMBER", description: "Amount donor CLAIMS to have sent in text." },
+                  date: { type: "STRING", description: "YYYY-MM-DD" },
+                  sender_name: { type: "STRING", description: "Name on receipt" },
+                  confidence_score: { type: "STRING", enum: ["HIGH", "MEDIUM", "LOW"] },
+                  confidence_details: {
+                    type: "OBJECT",
+                    properties: {
+                      amount_match: { type: "STRING", enum: ["EXACT", "PARTIAL", "MISMATCH", "UNKNOWN"] },
+                      name_match: { type: "STRING", enum: ["LIKELY", "UNLIKELY", "UNKNOWN"] },
+                      destination_match: { type: "STRING", enum: ["CONFIRMED", "UNKNOWN"] }
+                    }
+                  },
+                  notes: { type: "STRING", description: "e.g. 'Partial match', 'Different Currency'" }
+                }
+              }
+            },
+
+            suggested_reply: { type: "STRING", description: "Draft a reply if QUESTION." },
+            reasoning: { type: "STRING", description: "Why did you choose this outcome?" }
           },
-          required: ["category", "is_valid_receipt_found", "summary"]
+          required: ["category", "summary", "valid_receipts"]
         }
       }
     };

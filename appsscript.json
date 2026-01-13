@@ -1,16 +1,18 @@
 {
   "timeZone": "Asia/Dubai",
   "dependencies": {
-    "enabledAdvancedServices": [{
-      "userSymbol": "Gmail",
-      "serviceId": "gmail",
-      "version": "v1"
-    }]
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Gmail",
+        "serviceId": "gmail",
+        "version": "v1"
+      }
+    ]
   },
-  "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8",
   "webapp": {
     "executeAs": "USER_DEPLOYING",
     "access": "MYSELF"
-  }
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
 }

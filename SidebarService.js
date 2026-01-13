@@ -57,7 +57,42 @@ function getSidebarData() {
 
     // Calculate Real-Time Balance
     const maxPledgeAvailable = getRealTimePledgeBalance(pledgeId, donationRowData.data, ss);
-    const proofLink = donationRowData.data[SHEETS.donations.cols.proofLink - 1];
+    let proofLink = donationRowData.data[SHEETS.donations.cols.proofLink - 1];
+
+    // V2: Multi-Receipt Support
+    let receiptList = [];
+    let verifiedTotal = 0;
+
+    try {
+        const wsReceipts = ss.getSheetByName(SHEETS.receipts.name);
+        if (wsReceipts) {
+            const rRows = wsReceipts.getDataRange().getValues();
+            for (let i = 1; i < rRows.length; i++) {
+                // Col 2 = PledgeID (Index 1), Col 11 = Status (Index 10)
+                if (String(rRows[i][1]) === String(pledgeId) && rRows[i][10] === "VALID") {
+                    verifiedTotal += Number(rRows[i][6]) || 0; // Col 7 = Verified Amount
+                    receiptList.push({
+                        date: Utilities.formatDate(new Date(rRows[i][4]), Session.getScriptTimeZone(), "yyyy-MM-dd"), // Col 5 = Transfer Date
+                        amount: rRows[i][6],
+                        link: rRows[i][8], // Col 9 = Link
+                        filename: rRows[i][9] // Col 10 = Filename
+                    });
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Sidebar Receipt Fetch Error: " + e.message);
+    }
+
+    // Fallback: Legacy Link
+    if (receiptList.length === 0 && proofLink && String(proofLink).startsWith("http")) {
+        receiptList.push({
+            date: "Legacy",
+            amount: "N/A",
+            link: proofLink,
+            filename: "Attached Receipt"
+        });
+    }
 
     // --- STEP 3: FETCH STUDENT LIST (Synced) ---
     const lookupWs = ss.getSheetByName('Student Lookup');
@@ -91,18 +126,25 @@ function getSidebarData() {
         status === STATUS.pledge.PLEDGED ||
         status === STATUS.pledge.PROOF_SUBMITTED ||
         status === STATUS.pledge.VERIFIED ||
-        status === STATUS.pledge.PARTIALLY_ALLOCATED
+        status === STATUS.pledge.PARTIALLY_ALLOCATED ||
+        status === "Partial Receipt" ||
+        status === "Fully Funded / Proof Received"
     ) {
         return {
             pledgeId: pledgeId,
             maxPledgeAvailable: maxPledgeAvailable,
-            proofLink: proofLink,
+            proofLink: proofLink, // Deprecated but kept
+            receipts: receiptList, // [NEW]
+            verifiedTotal: verifiedTotal, // [NEW]
             students: students
         };
     } else {
-        throw new Error(`Pledge Status '${status}' does not allow allocation.`);
+        return { // [NEW] Return error state softly so UI can show it nicely? No, throw is better for now.
+            error: `Pledge Status '${status}' does not allow allocation.`
+        };
     }
 }
+
 
 /**
  * Fetches the real-time need for a specific student.
@@ -142,4 +184,107 @@ function processSidebarAllocation(pledgeId, cmsId, amount) {
     }
 
     return isSuccess;
+}
+
+/**
+ * Fetches ALL pledges that have money but aren't allocated yet.
+ * Used to populate the Multi-Select Picker in the Sidebar.
+ */
+function getAvailablePledgesForSidebar() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const rawWs = ss.getSheetByName(SHEETS.donations.name);
+    const data = rawWs.getDataRange().getValues();
+
+    const availablePledges = [];
+
+    // Skip header
+    // [NEW] Pre-fetch Receipt Links to fix "See Receipt Log" issue
+    const receiptMap = new Map(); // PledgeID -> Latest Link
+    try {
+        const receiptWs = ss.getSheetByName(SHEETS.receipts.name);
+        const receiptData = receiptWs.getDataRange().getValues();
+        // Iterate receipts to find valid links
+        for (let r = 1; r < receiptData.length; r++) {
+            const rPledgeId = receiptData[r][SHEETS.receipts.cols.pledgeId - 1];
+            const rStatus = receiptData[r][SHEETS.receipts.cols.status - 1];
+            const rLink = receiptData[r][SHEETS.receipts.cols.driveLink - 1];
+
+            if (rStatus === 'VALID' && rLink) {
+                // Always overwrite -> Gets the latest one (assuming appended in order)
+                // Or we could store an array? For now, UI expects one link.
+                receiptMap.set(String(rPledgeId), rLink);
+            }
+        }
+    } catch (e) {
+        console.warn("Sidebar: Failed to fetch receipts map", e);
+    }
+
+    for (let i = 1; i < data.length; i++) {
+        const pledgeId = data[i][SHEETS.donations.cols.pledgeId - 1];
+        const status = data[i][SHEETS.donations.cols.status - 1];
+        const donorName = data[i][SHEETS.donations.cols.donorName - 1];
+        const proofLink = data[i][SHEETS.donations.cols.proofLink - 1];
+
+        // Criteria: Proof Received OR Active Recurring
+        // Criteria: Broad check for any potentially funded status
+        // We include ad-hoc statuses from Receipt Processor and canonical ones.
+        const validStatuses = [
+            STATUS.pledge.PROOF_SUBMITTED,
+            STATUS.pledge.PARTIALLY_ALLOCATED,
+            STATUS.pledge.VERIFIED,
+            STATUS.pledge.PARTIAL_RECEIPT,
+            STATUS.pledge.FULLY_FUNDED
+        ];
+
+        // Also check if Verified Amount > 0 (Catch-all for weird statuses)
+        const verifiedAmt = Number(data[i][SHEETS.donations.cols.verifiedTotalAmount - 1]) || 0;
+
+        if (validStatuses.includes(status) || verifiedAmt > 0) {
+
+            // Exclude explicitly cancelled/rejected
+            if (status === STATUS.pledge.CANCELLED || status === STATUS.pledge.REJECTED) continue;
+
+            // Calculate Real Balance (Expensive op, but necessary)
+            // Optimization: In production, maybe cache this or trust a helper column?
+            // For now, we calculate live.
+            const balance = getRealTimePledgeBalance(pledgeId, data[i], ss);
+
+            if (balance > 0) {
+                // Resolve Proof Link: Use Receipt Log if available, else Raw Data
+                let finalLink = proofLink;
+                if (receiptMap.has(String(pledgeId))) {
+                    finalLink = receiptMap.get(String(pledgeId));
+                }
+
+                availablePledges.push({
+                    id: pledgeId,
+                    name: donorName,
+                    amount: balance,
+                    proofLink: finalLink
+                });
+            }
+        }
+    }
+
+    // Also fetch students (Reuse existing logic)
+    // We can bundle this call to make the UI load faster
+    const students = getPendingStudentsList(ss); // (Refactor your existing logic into a helper)
+
+    return {
+        pledges: availablePledges,
+        students: students
+    };
+}
+
+// Helper for Students (extracted from your previous getSidebarData)
+function getPendingStudentsList(ss) {
+    const lookupWs = ss.getSheetByName('Student Lookup');
+    const lookupData = lookupWs.getDataRange().getValues();
+    const list = [];
+    for (let i = 1; i < lookupData.length; i++) {
+        if (Number(lookupData[i][3]) > 0) { // Pending > 0
+            list.push({ cmsId: String(lookupData[i][0]), need: Number(lookupData[i][3]) });
+        }
+    }
+    return list;
 }

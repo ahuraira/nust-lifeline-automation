@@ -111,30 +111,33 @@ function syncPledgeData() {
 
     for (let i = 1; i < rawData.length; i++) {
       const pId = String(rawData[i][SHEETS.donations.cols.pledgeId - 1]);
-      // IMPORTANT: Ensure 'duration' column (K/11) is actually a number, or map text to number.
-      // Assuming for this step that you have a numeric amount column. 
-      // If your form only has "One Semester", you need a helper function to convert that to a value (e.g. 50000).
-      // Let's assume you have a column for Numeric Amount. If not, we need to map it.
-
-      // *** CENTRALIZED LOGIC: MAPPING TEXT TO AMOUNT ***
       const durationText = String(rawData[i][SHEETS.donations.cols.duration - 1]);
       const totalPledged = getPledgeAmountFromDuration(durationText);
+      const verifiedTotal = Number(rawData[i][SHEETS.donations.cols.verifiedTotalAmount - 1]) || 0; // Col 23
 
       const used = usedMap[pId] || 0;
-      const remaining = totalPledged - used;
+
+      // V2 Logic:
+      // Cash Balance (Available) = Verified - Used
+      const cashBalance = verifiedTotal - used;
+
+      // Pledge Outstanding = Pledged - Verified
+      const pledgeOutstanding = Math.max(0, totalPledged - verifiedTotal);
 
       if (pId && pId.startsWith("PLEDGE")) {
-        outputData.push([pId, totalPledged, used, remaining]);
+        // Col 1: ID, Col 2: Total, Col 3: Used, Col 4: Cash Balance (Available), Col 5: Pledge Outstanding, Col 6: Verified
+        outputData.push([pId, totalPledged, used, cashBalance, pledgeOutstanding, verifiedTotal]);
       }
     }
 
     // 3. Update the Mirror Sheet
     const mirrorWs = SpreadsheetApp.openById(CONFIG.ssId_operations).getSheetByName('Pledge Lookup');
     if (mirrorWs.getLastRow() > 1) {
-      mirrorWs.getRange(2, 1, mirrorWs.getLastRow() - 1, 4).clearContent();
+      // Clear up to 6 columns now
+      mirrorWs.getRange(2, 1, mirrorWs.getLastRow() - 1, 6).clearContent();
     }
     if (outputData.length > 0) {
-      mirrorWs.getRange(2, 1, outputData.length, 4).setValues(outputData);
+      mirrorWs.getRange(2, 1, outputData.length, 6).setValues(outputData);
     }
     // writeLog('INFO', FUNC_NAME, 'Pledge data synced.');
 

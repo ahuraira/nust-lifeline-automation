@@ -1,0 +1,6 @@
+**/configs/**
+.vscode/**
+.git/**
+README.md
+task.md
+*.md

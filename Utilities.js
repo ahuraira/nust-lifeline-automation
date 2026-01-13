@@ -227,27 +227,28 @@ function alignManualInputs(e) {
 
   const lastRow = ws.getLastRow();
   if (lastRow >= 2) {
-    // 1. Shift Manual Data Down (A2:E -> A3:E)
-    // We explicitly define the manual columns: A, B, C, D, E.
-    // Note: B and C contain formulas that need to be preserved or re-applied.
-    // D is Amount, E is Status.
+    // 1. Shift Manual Data Down Separately to avoid corrupting B/C Formulas
+    // Move Column A (Index 1)
+    const rangeA = ws.getRange(2, 1, lastRow - 1, 1);
+    const targetA = ws.getRange(3, 1, lastRow - 1, 1);
+    rangeA.copyTo(targetA);
 
-    // Read current data from A2:E{lastRow}
-    const manualRange = ws.getRange(2, 1, lastRow - 1, 5);
+    // Move Columns D, E (Index 4, 5)
+    const rangeDE = ws.getRange(2, 4, lastRow - 1, 2);
+    const targetDE = ws.getRange(3, 4, lastRow - 1, 2);
+    rangeDE.copyTo(targetDE);
 
-    // Write back to A3:E{lastRow+1}
-    const targetRange = ws.getRange(3, 1, lastRow - 1, 5);
+    // 2. Clear Row 2 Manual Inputs (Clean Slate)
+    ws.getRange("A2").clearContent();
+    ws.getRange("D2:E2").clearContent();
 
-    // Copy content (values + formulas)
-    manualRange.copyTo(targetRange);
+    // 3. SAFETY CLEANUP: Clear B3:C to remove any accidental debris
+    // Since B2 and C2 are Array Formulas, B3:C must be empty.
+    if (lastRow >= 2) {
+      ws.getRange(3, 2, lastRow - 1, 2).clearContent();
+    }
 
-    // 2. Clear Row 2 (The new "Top" Row)
-    // We strictly clear only columns A to E (1 to 5). 
-    // This DOES NOT touch Column F (6) where the QUERY formula resides.
-    const manualInputRow = ws.getRange(2, 1, 1, 5); // A2:E2
-    manualInputRow.clearContent(); // Clears values in A, D, E and formulas in B, C
-
-    // 3. Restore Formulas in B2/C2
+    // 4. Restore/Ensure Formulas in B2/C2
     // These match the new top row logic.
     const B2_FORMULA = '=ARRAYFORMULA(IF(A2:A="", "", IFERROR(VLOOKUP(TO_TEXT(A2:A), TO_TEXT(\'Student Lookup\'!A:D), 4, FALSE), "⚠️ ID Not Found / Fully Funded")))';
     const C2_FORMULA = '=ARRAYFORMULA(IF(G2:G="", "", IFERROR(VLOOKUP(G2:G, \'Pledge Lookup\'!A:D, 4, FALSE), "Loading...")))';
@@ -259,11 +260,11 @@ function alignManualInputs(e) {
 
 /**
  * Robustly parses a currency string into a number.
- * Handles inputs like "100,000", "PKR 50,000", "100.00", or raw numbers.
+ * Handles inputs like "100,000", "PKR 50,000", "15k", "1.2m".
  * @param {string|number} input The value to parse.
  * @return {number} The numeric value, or 0 if invalid.
  */
-function parseCurrency(input) {
+function parseCurrencyString(input) {
   if (input === null || input === undefined || input === '') {
     return 0;
   }
@@ -272,11 +273,24 @@ function parseCurrency(input) {
     return input;
   }
 
-  // Convert to string, remove commas and non-numeric chars (except dot and minus)
-  const cleanString = String(input).replace(/[^0-9.-]+/g, "");
+  // 1. Normalize String: Lowercase, remove commas/spaces/currencies
+  // We keep digits, dots, and 'k'/'m' for multipliers
+  let cleanString = String(input).toLowerCase().replace(/[^0-9.km]+/g, "");
+
+  // 2. Handle Multipliers
+  let multiplier = 1;
+  if (cleanString.endsWith('k')) {
+    multiplier = 1000;
+    cleanString = cleanString.slice(0, -1);
+  } else if (cleanString.endsWith('m')) {
+    multiplier = 1000000;
+    cleanString = cleanString.slice(0, -1);
+  }
+
+  // 3. Parse and Multiply
   const value = parseFloat(cleanString);
 
-  return isNaN(value) ? 0 : value;
+  return isNaN(value) ? 0 : value * multiplier;
 }
 
 /**
@@ -292,21 +306,25 @@ function getCCString(chapterName) {
   let ccEmails = [];
 
   // 1. Add Default CC (Always included)
+  // 1. Add Default CC (Always included)
   if (EMAILS.alwaysCC) {
-    ccEmails.push(EMAILS.alwaysCC);
+    if (Array.isArray(EMAILS.alwaysCC)) {
+      ccEmails = ccEmails.concat(EMAILS.alwaysCC);
+    } else {
+      ccEmails.push(EMAILS.alwaysCC);
+    }
   }
 
   // 2. Add Chapter Leads (if chapter is provided)
-  if (chapterName) {
-    // Handle case where chapter might not exist in mapping -> use 'Other'
-    const leads = MAPPINGS.chapterLeads[chapterName] || MAPPINGS.chapterLeads['Other'];
+  // Fix: Fallback to 'Other' if chapterName is empty
+  const safeChapter = chapterName || 'Other';
+  const leads = MAPPINGS.chapterLeads[safeChapter] || MAPPINGS.chapterLeads['Other'] || [];
 
-    if (leads) {
-      if (Array.isArray(leads)) {
-        ccEmails = ccEmails.concat(leads);
-      } else {
-        ccEmails.push(leads);
-      }
+  if (leads) {
+    if (Array.isArray(leads)) {
+      ccEmails = ccEmails.concat(leads);
+    } else {
+      ccEmails.push(leads);
     }
   }
 
@@ -459,40 +477,64 @@ function sendOrReply(recipient, subject, htmlBody, options = {}, priorMessageIds
 
 /**
  * Generates a 'mailto' link for the Hostel-led confirmation workflow.
- * Encodes the recipient, CC, subject, and body for URL use.
- * @param {Object} data { donorEmail, donorName, pledgeId, allocationId, amount, chapterLeadEmail, cmsId }
+ * Fetches the body text from a Google Doc Template (plain text).
+ * @param {Object} data { donorEmail, donorName, pledgeId, allocationId, amount, chapterLeadEmail, cmsId, studentName, school }
+ * @param {string} templateId The Google Doc ID for the email body.
  * @return {string} The full mailto URL.
  */
-function generateHostelReplyLink(data) {
+function generateHostelReplyLink(data, templateId) {
   const recipient = data.donorEmail;
   // CC Us + Chapter Lead (Robustness)
-  const ccString = `${EMAILS.alwaysCC},${data.chapterLeadEmail || ''}`
-    // Clean up double commas if chapterLeadEmail is empty
-    .replace(/^,|,$/g, '')
-    .replace(',,', ',');
+  // Merge alwaysCC and chapterLeads, split by comma, dedup, and rejoin
+  const ccParts = Array.isArray(EMAILS.alwaysCC) ? EMAILS.alwaysCC : [EMAILS.alwaysCC];
+  const rawCC = `${ccParts.join(',')},${data.chapterLeadEmail || ''}`;
+  const ccList = rawCC.split(',').map(e => e.trim()).filter(e => e);
+  const uniqueCC = [...new Set(ccList)];
+  const ccString = uniqueCC.join(',');
 
-  const subject = `Official Confirmation: Receipt of Funds (Ref: ${data.pledgeId})`;
+  let subject = `Official Confirmation: Receipt of Funds (Ref: ${data.pledgeId})`;
+  let body = "";
 
-  // Professional Plain Text Body - PRIVACY FOCUSED (No Student Name)
-  // Includes Allocation ID in the copy for AI Watchdog.
-  const body = `Dear ${data.donorName},
+  // --- FETCH BODY & SUBJECT FROM GOOGLE DOC ---
+  if (templateId && templateId.includes('ENTER') === false) {
+    try {
+      // 1. Get Subject from Filename
+      const file = DriveApp.getFileById(templateId);
+      subject = file.getName();
 
-On behalf of the National University of Sciences & Technology (NUST), I am writing to officially acknowledge the receipt of your contribution.
+      // 2. Fetch Plain Text Body
+      const url = `https://www.googleapis.com/drive/v3/files/${templateId}/export?mimeType=text/plain`;
+      const options = {
+        method: 'get',
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      };
+      const response = UrlFetchApp.fetch(url, options);
+      if (response.getResponseCode() === 200) {
+        body = response.getContentText();
+      } else {
+        body = "Error loading template. Please check Doc ID.";
+      }
+    } catch (e) {
+      console.warn(`Failed to fetch hostel intimation template: ${e.message}`);
+      body = "Error loading template.";
+    }
+  } else {
+    // Fallback if ID is missing
+    body = `Dear {{donorName}},\n\nPayment Received for {{studentName}}.\nRef: {{pledgeId}}\n\n(Generated Reply)`;
+  }
 
-We confirm that PKR ${data.amount} has been received in the Hostel Catering Account and has been adjusted against the hostel dues for Student CMS ID: ${data.cmsId}.
+  // --- REPLACE PLACEHOLDERS ---
+  // We use a simple regex replacement for all keys in 'data'
+  for (const key in data) {
+    const regex = new RegExp('{{' + key + '}}', 'g');
+    body = body.replace(regex, data[key]);
+    // Also replace in subject (if fetched from file name)
+    subject = subject.replace(regex, data[key]);
+  }
 
-Transaction Details:
-- Pledge Ref: ${data.pledgeId}
-- Allocation Ref: ${data.allocationId}
-
-This transaction is now verified and complete.
-
-Thank you for your support of our students.
-
-Regards,
-
-DD Hostels / Accounts Office
-NUST Hostels Admin Directorate`;
+  // Clean up any remaining braces if keys were missing? No, leave them or clean them?
+  // Let's leave them for debugging visibility.
 
   // Encode for URL
   const encodedSubject = encodeURIComponent(subject);
@@ -500,6 +542,118 @@ NUST Hostels Admin Directorate`;
   const encodedCC = encodeURIComponent(ccString);
 
   return `mailto:${recipient}?cc=${encodedCC}&subject=${encodedSubject}&body=${encodedBody}`;
+}
+
+/**
+ * Generates a Batch Mailto link using BCC for privacy.
+ * @param {Array} donors Array of {email, pledgeId, amount}
+ * @param {Object} student {name, cms, school}
+ */
+/**
+ * Generates a Batch Mailto link using BCC for privacy.
+ * Uses a Google Doc Template for the body/subject.
+ * @param {Array} donors Array of {email, pledgeId, amount}
+ * @param {Object} student {name, cms, school}
+ */
+/**
+ * Generates a Batch Mailto link using BCC for privacy.
+ * Uses a Google Doc Template for the body/subject.
+ * @param {Array} donors Array of {email, pledgeId, amount}
+ * @param {Object} student {name, cms, school}
+ * @param {string} batchId The Batch Reference ID (e.g., BATCH-123)
+ */
+function generateBatchMailtoLink(donors, student, batchId) {
+  // 1. Extract Emails for BCC and CC
+  const bccEmails = donors.map(d => d.email).join(',');
+
+  // [FIX] Aggregate Chapter Leads for CC
+  let ccEmails = [];
+  // Add Always CC
+  if (EMAILS.alwaysCC) {
+    ccEmails = ccEmails.concat(Array.isArray(EMAILS.alwaysCC) ? EMAILS.alwaysCC : [EMAILS.alwaysCC]);
+  }
+  // Add Leads for each unique chapter in the batch
+  const distinctChapters = [...new Set(donors.map(d => d.chapter))];
+  distinctChapters.forEach(chapter => {
+    const safeChapter = chapter || 'Other';
+    const leads = MAPPINGS.chapterLeads[safeChapter] || MAPPINGS.chapterLeads['Other'] || [];
+    ccEmails = ccEmails.concat(Array.isArray(leads) ? leads : [leads]);
+  });
+  // Dedup and Clean
+  const uniqueCC = [...new Set(ccEmails)].filter(e => e && e.trim() !== '').join(',');
+
+  // 2. Build the Reference Table for the Body
+  let refTable = "Contributions Verified:\n";
+  let totalAmount = 0;
+  donors.forEach(d => {
+    refTable += `- Ref: ${d.pledgeId} | PKR ${Number(d.amount).toLocaleString()} | ${d.chapter || 'Other'}\n`;
+    totalAmount += Number(d.amount);
+  });
+
+  let subject = `Official Confirmation: Receipt of Funds | Student ID: ${student.cms} (Ref: ${batchId || 'BATCH'})`;
+  let body = "";
+
+  // 3. Fetch Content from Template (if configured)
+  const templateId = CONFIG.batchDonorMailtoBody || TEMPLATES.batchDonorMailtoBody;
+
+  if (templateId) {
+    try {
+      // 3.1 Get Subject from Filename (Optional/Overwritable)
+      const file = DriveApp.getFileById(templateId);
+      const filename = file.getName();
+      // If filename looks like a template (contains {{), use it, otherwise use default
+      if (filename.includes('{{')) subject = filename;
+
+      // 3.2 Fetch Plain Text Body
+      const url = `https://www.googleapis.com/drive/v3/files/${templateId}/export?mimeType=text/plain`;
+      const options = {
+        method: 'get',
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      };
+      const response = UrlFetchApp.fetch(url, options);
+      if (response.getResponseCode() === 200) {
+        body = response.getContentText();
+      } else {
+        body = "Error loading template. Batch details below.";
+      }
+    } catch (e) {
+      console.warn("Failed to fetch batch template: " + e.message);
+      body = "Error loading template.";
+    }
+  } else {
+    // Hardcoded Fallback
+    body = `Dear NUST Supporters,\n\nOn behalf of NUST, we verify these contributions.\n\nStudent: {{studentName}} (CMS: {{cmsId}})\n\n{{refTable}}`;
+  }
+
+  // 4. Replace Placeholders
+  // Supported Placeholders: {{studentName}}, {{cmsId}}, {{school}}, {{refTable}}, {{totalAamount}}, {{batchId}}, {{studentId}}
+  const replacements = {
+    studentName: student.name,
+    cmsId: student.cms,
+    studentId: student.cms, // Synonym
+    school: student.school,
+    refTable: refTable,
+    totalAamount: totalAmount.toLocaleString(), // [User Request matches typo in Doc?]
+    totalAmount: totalAmount.toLocaleString(), // Correct spelling just in case
+    batchId: batchId || 'BATCH-Reference'
+  };
+
+  for (const key in replacements) {
+    // Robust regex replacement
+    const regex = new RegExp(`{{${key}}}`, 'g');
+    body = body.replace(regex, replacements[key]);
+    subject = subject.replace(regex, replacements[key]);
+  }
+
+  const encodedBCC = encodeURIComponent(bccEmails);
+  const encodedCC = encodeURIComponent(uniqueCC); // [NEW] Encoded CC
+  const encodedSubject = encodeURIComponent(subject);
+  const encodedBody = encodeURIComponent(body);
+
+  // Note: 'to' field can be left blank or set to the admin email
+  // [FIX] Added &cc=...
+  return `mailto:?bcc=${encodedBCC}&cc=${encodedCC}&subject=${encodedSubject}&body=${encodedBody}`;
 }
 
 /**

@@ -7,8 +7,12 @@
 const STATUS_WORKFLOW = {
     PLEDGE: {
         '1 - Pledged': {
-            next: ['2 - Proof Submitted', '9 - Cancelled'],
+            next: ['1a - Partial Receipt', '2 - Proof Submitted', '9 - Cancelled'],
             label: 'Pledged'
+        },
+        '1a - Partial Receipt': {
+            next: ['1a - Partial Receipt', '2 - Proof Submitted', '9 - Cancelled'],
+            label: 'Partial Receipt'
         },
         '2 - Proof Submitted': {
             next: ['3 - Verified', '4 - Partially Allocated', '9 - Rejected'],
@@ -95,7 +99,9 @@ const STATUS_WORKFLOW = {
 const STATUS = {
     pledge: {
         PLEDGED: '1 - Pledged',
+        PARTIAL_RECEIPT: '1a - Partial Receipt', // [CHANGED] Start of funding, but still pledged
         PROOF_SUBMITTED: '2 - Proof Submitted',
+        FULLY_FUNDED: '2 - Proof Submitted', // [CHANGED] Alias for standard success
         VERIFIED: '3 - Verified',
         PARTIALLY_ALLOCATED: '4 - Partially Allocated',
         FULLY_ALLOCATED: '5 - Fully Allocated',

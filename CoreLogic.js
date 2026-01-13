@@ -54,7 +54,9 @@ function getPledgeAmountFromDuration(durationText) {
     if (text.includes("Semester")) return CONFIG.pledgeAmounts.oneSemester;
     if (text.includes("Four Years") || text.includes("4 Years")) return CONFIG.pledgeAmounts.fourYears;
     if (text.includes("Year")) return CONFIG.pledgeAmounts.oneYear;
-    return 0;
+
+    // Fallback: Try to parse custom amount (e.g. "PKR 50000", "50k")
+    return parseCurrencyString(text);
 }
 
 /**
@@ -65,9 +67,12 @@ function getPledgeAmountFromDuration(durationText) {
  * @return {number} The remaining balance.
  */
 function getRealTimePledgeBalance(pledgeId, pledgeRowData, spreadsheet = null) {
-    // 1. Get Total Pledged Amount using centralized logic
-    const durationText = String(pledgeRowData[SHEETS.donations.cols.duration - 1]);
-    const totalPledged = getPledgeAmountFromDuration(durationText);
+    // 1. Get Base Amount: STRICTLY CASH IN BANK (Verified Amount)
+    // SOTA Requirement: "Allocating based on promises is a Leak."
+    // We ignore duration/promise and look only at Verified Total (Col 23, Index 22)
+    // Note: pledgeRowData is an array of values.
+
+    const verifiedAmount = Number(pledgeRowData[SHEETS.donations.cols.verifiedTotalAmount - 1]) || 0;
 
     // 2. Sum all allocations for this Pledge ID
     const ss = spreadsheet || SpreadsheetApp.openById(CONFIG.ssId_operations);
@@ -81,7 +86,7 @@ function getRealTimePledgeBalance(pledgeId, pledgeRowData, spreadsheet = null) {
         }
     }
 
-    return totalPledged - totalAllocated;
+    return verifiedAmount - totalAllocated;
 }
 
 /**
@@ -180,3 +185,27 @@ function updatePledgeStatus(pledgeId) {
         );
     }
 }
+
+/**
+ * Safe accessor for Form Event values.
+ * Prevents crashes if question titles change.
+ * @param {Object} e The event object.
+ * @param {string} key The exact question title.
+ * @return {string} The value, or an empty string if not found.
+ */
+function getFormValue(e, key) {
+    if (e && e.namedValues && e.namedValues[key]) {
+        return e.namedValues[key][0];
+    }
+    // Log warning but don't crash
+    if (e && e.namedValues) {
+        const keys = Object.keys(e.namedValues).join(', ');
+        // Fallback to console to be safe, or writeLog if confident
+        console.warn(`[getFormValue] Key not found: "${key}". Available keys: ${keys}`);
+        if (typeof writeLog === 'function') {
+            writeLog('WARN', 'getFormValue', `Key not found: "${key}". Available keys: ${keys}`);
+        }
+    }
+    return '';
+}
+
