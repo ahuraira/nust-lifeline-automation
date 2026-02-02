@@ -3,7 +3,88 @@
  * 
  * Provides a robust, append-only logging mechanism for business-critical events.
  * Segregates "Audit" (Business history) from "Log" (System debug).
+ * 
+ * DASHBOARD INTEGRATION:
+ * - Events are formatted for the Live Activity Ticker
+ * - Sensitive data is anonymized before display
+ * - Event types map to user-friendly messages
  */
+
+// ============================================================================
+// EVENT TEMPLATES - User-friendly messages for Dashboard
+// ============================================================================
+const EVENT_TEMPLATES = {
+    NEW_PLEDGE: {
+        icon: '🎁',
+        template: 'New pledge of PKR {{amount}} received from {{chapter}}'
+    },
+    RECEIPT_PROCESSED: {
+        icon: '✅',
+        template: 'Receipt verified: PKR {{amount}} confirmed'
+    },
+    RECEIPT_PROCESSED_V2: {
+        icon: '✅',
+        template: '{{count}} receipt(s) verified totaling PKR {{amount}}'
+    },
+    ALLOCATION: {
+        icon: '🎓',
+        template: 'PKR {{amount}} allocated to support a student'
+    },
+    HOSTEL_VERIFICATION: {
+        icon: '🏠',
+        template: 'Hostel confirmed: Funds credited to student account'
+    },
+    HOSTEL_QUERY: {
+        icon: '❓',
+        template: 'Hostel requested clarification on allocation'
+    },
+    ALERT: {
+        icon: '⚠️',
+        template: 'System flagged item for manual review'
+    },
+    STATUS_CHANGE: {
+        icon: '📋',
+        template: 'Status updated: {{previousValue}} → {{newValue}}'
+    },
+    DONOR_NOTIFIED: {
+        icon: '📧',
+        template: 'Donor notified: {{message}}'
+    },
+    SYSTEM_EVENT: {
+        icon: '⚙️',
+        template: '{{action}}'
+    }
+};
+
+/**
+ * Formats a dashboard-friendly event message from audit data.
+ * Used by the Dashboard API to create the live ticker.
+ * 
+ * @param {string} eventType The event type (e.g., 'NEW_PLEDGE')
+ * @param {Object} data Object containing: { amount, chapter, count, message, action, previousValue, newValue }
+ * @returns {Object} { icon: string, message: string }
+ */
+function formatDashboardEvent(eventType, data) {
+    const template = EVENT_TEMPLATES[eventType] || EVENT_TEMPLATES.SYSTEM_EVENT;
+    let message = template.template;
+
+    // Replace placeholders
+    Object.keys(data).forEach(key => {
+        const value = data[key];
+        const formatted = (typeof value === 'number')
+            ? value.toLocaleString()
+            : (value || '');
+        message = message.replace(new RegExp(`{{${key}}}`, 'g'), formatted);
+    });
+
+    // Clean up any unreplaced placeholders
+    message = message.replace(/\{\{[^}]+\}\}/g, '');
+
+    return {
+        icon: template.icon,
+        message: message.trim()
+    };
+}
 
 /**
  * Logs a high-level business event to the specialized Audit Trail sheet.

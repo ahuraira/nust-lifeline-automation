@@ -1,8 +1,39 @@
+# ============================================
+# NUST Lifeline - Git Ignore Configuration
+# ============================================
+
+# === Credentials & Secrets ===
 .clasp.json
+.clasp.dev.json
 .creds.json
+*-firebase-adminsdk-*.json
+serviceAccount.json
+.env.local
+.env.*.local
+
+# === Build Outputs ===
 node_modules/
+dashboard/dist/
+dashboard/node_modules/
+
+# === OS Files ===
 .DS_Store
 Thumbs.db
+
+# === IDE ===
+.vscode/
+.idea/
+
+# === Firebase ===
+.firebase/
+firebase-debug.log
+
+# === Local Configs ===
 /configs
-.vscode
-.clasp.dev.json
+
+# === Logs ===
+*.log
+npm-debug.log*
+
+# === GEMINI===
+GEMINI.md

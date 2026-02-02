@@ -7,6 +7,15 @@ and this project adheres to loose semantic versioning.
 
 ## [Unreleased]
 
+## [Version 58] - 2026-02-02
+### Dashboard
+- **Chart Update:**
+    - Replaced "Donation Duration" chart with **"Donor Affiliation"** chart in the Composition view.
+    - Updated `DashboardAPIService.js` to aggregate and normalize affiliation data (e.g., " seecs " -> "SEECS").
+    - Updated TypeScript types (`api.ts`) and frontend component (`CompositionCharts.tsx`).
+- **Deployment:**
+    - Added GitHub Actions workflow for automated Firebase Hosting deployment.
+
 ## [Version 57] - 2026-01-13
 ### Documentation (SOTA Overhaul)
 - **Comprehensive README Redesign:**

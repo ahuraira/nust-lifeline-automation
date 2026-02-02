@@ -55,6 +55,11 @@ A **serverless ERP** built entirely on Google Workspace that provides:
 | **Forensic Auditability** | Immutable event logging with RFC-822 message threading |
 | **Human-in-the-Loop** | Sidebar UI for controlled financial decisions |
 
+### 📊 Dashboard Preview
+
+![Dashboard Preview](docs/images/dashboard-preview.png)
+> *Live Dashboard currently running at [nust-lifeline-dashboard.web.app](https://nust-lifeline-dashboard.web.app)*
+
 ---
 
 ## ✨ Key Features

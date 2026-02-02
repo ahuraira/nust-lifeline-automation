@@ -1,6 +1,21 @@
+# Dashboard React app (not part of Apps Script)
+dashboard/**
+
+# Configuration folders
 **/configs/**
-.vscode/**
+
+# Documentation
+docs/**
+
+# Git and editor files
 .git/**
-README.md
-task.md
+.vscode/**
+.idea/**
+
+# Markdown files (except preserve appsscript.json)
 *.md
+*.lock
+*.log
+
+# But keep these:
+!appsscript.json
