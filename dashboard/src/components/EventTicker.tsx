@@ -43,24 +43,22 @@ export function EventTicker() {
     const events = [...data.events.slice(0, 8), ...data.events.slice(0, 8)];
 
     return (
-        <div className="bg-slate-800/50 border-b border-slate-700/30 overflow-hidden">
+        <div className="bg-[var(--color-bg-secondary)]/80 backdrop-blur-md border-b border-[var(--color-border)] overflow-hidden">
             <div className="flex items-center">
                 {/* Live indicator - fixed on left */}
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 shrink-0 px-4 py-2 bg-slate-800/80 z-10">
+                <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] shrink-0 px-4 py-2 bg-[var(--color-bg-secondary)] z-10 border-r border-[var(--color-border)]">
                     <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-status-success)] opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--color-status-success)]"></span>
                     </span>
                     <span className="font-medium">Live</span>
                 </div>
 
-                <div className="h-6 w-px bg-slate-600 shrink-0" />
-
                 {/* Scrolling marquee container */}
                 <div className="overflow-hidden flex-1 relative">
-                    {/* Fade edges */}
-                    <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-slate-800/80 to-transparent z-10 pointer-events-none" />
-                    <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-800/80 to-transparent z-10 pointer-events-none" />
+                    {/* Fade edges - using CSS mask or simple gradients to transparent */}
+                    <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-[var(--color-bg-secondary)] to-transparent z-10 pointer-events-none" />
+                    <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[var(--color-bg-secondary)] to-transparent z-10 pointer-events-none" />
 
                     {/* Scrolling content */}
                     <motion.div

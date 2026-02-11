@@ -7,6 +7,23 @@ and this project adheres to loose semantic versioning.
 
 ## [Unreleased]
 
+## [Version 60] - 2026-02-11
+### Dashboard
+- **Financial Metrics Overhaul:**
+    - Implemented "Effective Amount" logic: combines verified one-time/completed pledges with pledged active subscriptions.
+    - Updated "Students Funded" calculation: `Total Effective / Cost Per Student (240k)`.
+    - Integrated `Dim_External_Transfers` sheet for manually tracking off-platform verified amounts (per-donor cumulative).
+- **Visualization & UX:**
+    - **Light Theme Support:** Full light/dark mode compatibility using native Tailwind v4 CSS variants (`@variant dark`).
+    - **Leaderboard:** Now displays "Students Funded" progress bars instead of raw count, sorted by % target achievement.
+    - **Campaign Progress:** Added "Pledged vs Verified" visibility with dashed line indicator for effective/committed amounts.
+    - **Chapter Targets:** Hardcoded targets in `Config.js` for real-time progress tracking against goals.
+### Frontend Architecture
+- **Tailwind v4 Configuration:**
+    - Migrated to Tailwind v4 native configuration (removed legacy `tailwind.config.js`).
+    - Implemented CSS-native dark mode using `@variant` directive in `index.css`.
+    - Added CSS variables for theme-aware charts (Recharts).
+
 ## [Version 59.4] - 2026-02-09
 ### Multi-Student Batch Allocation Enhancement
 - **Enhanced `processBatchAllocation()` in AdminWorkflow.js**

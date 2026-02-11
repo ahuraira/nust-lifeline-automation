@@ -41,7 +41,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 dark:bg-slate-900 transition-colors">
+    <div className="min-h-screen transition-colors">
       <Header isDark={isDark} onToggleTheme={toggleTheme} />
       <EventTicker />
 
@@ -50,9 +50,9 @@ function AppContent() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 mt-12 py-6">
+      <footer className="border-t border-[var(--color-border)] mt-12 py-6 transition-colors">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             NUST Lifeline Campaign • Built with transparency in mind
           </p>
         </div>

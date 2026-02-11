@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 /* Dark mode first - Custom theme variables */
 :root {
   /* Light mode colors (secondary) */
@@ -11,6 +13,49 @@
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
+  --color-border: #e2e8f0;
+  --color-grid: #e2e8f0;
+  --color-tooltip-bg: #fff;
+  --color-tooltip-bg: #fff;
+  --color-tooltip-text: #0f172a;
+
+  /* Gradient Colors */
+  --bg-gradient-1: rgba(99, 102, 241, 0.15);
+  /* Indigo */
+  --bg-gradient-2: rgba(16, 185, 129, 0.15);
+  /* Emerald */
+  --bg-gradient-3: rgba(245, 158, 11, 0.10);
+  /* Amber */
+
+  /* Semantic Status Colors */
+  --color-status-success: #10b981;
+  /* emerald-500 */
+  --color-status-warning: #f59e0b;
+  /* amber-500 */
+  --color-status-error: #f43f5e;
+  /* rose-500 */
+  --color-status-info: #3b82f6;
+  /* blue-500 */
+
+  /* Chart Colors */
+  --color-chart-1: #10b981;
+  /* emerald */
+  --color-chart-2: #6366f1;
+  /* indigo */
+  --color-chart-3: #f59e0b;
+  /* amber */
+  --color-chart-4: #3b82f6;
+  /* blue */
+  --color-chart-5: #8b5cf6;
+  /* purple */
+  --color-chart-6: #ec4899;
+  /* pink */
+
+  /* Modern UI Variables (Glass Effect) */
+  --glass-bg: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  --glass-blur: blur(32px);
 }
 
 .dark {
@@ -23,9 +68,50 @@
   --color-success: #34d399;
   --color-warning: #fbbf24;
   --color-error: #f87171;
+  --color-border: #334155;
+  --color-grid: #334155;
+  --color-tooltip-bg: #1e293b;
+  --color-tooltip-bg: #1e293b;
+  --color-tooltip-text: #f1f5f9;
+
+  /* Gradient Colors - More subtle in dark mode */
+  --bg-gradient-1: rgba(99, 102, 241, 0.10);
+  --bg-gradient-2: rgba(16, 185, 129, 0.10);
+  --bg-gradient-3: rgba(245, 158, 11, 0.05);
+
+  /* Semantic Status Colors (Dark Mode) */
+  --color-status-success: #34d399;
+  /* emerald-400 */
+  --color-status-warning: #fbbf24;
+  /* amber-400 */
+  --color-status-error: #fb7185;
+  /* rose-400 */
+  --color-status-info: #60a5fa;
+  /* blue-400 */
+
+  /* Chart Colors - using slightly lighter shades for dark mode if needed, or same */
+  --color-chart-1: #34d399;
+  /* emerald-400 */
+  --color-chart-2: #818cf8;
+  /* indigo-400 */
+  --color-chart-3: #fbbf24;
+  /* amber-400 */
+  --color-chart-4: #60a5fa;
+  /* blue-400 */
+  --color-chart-5: #a78bfa;
+  /* purple-400 */
+  --color-chart-6: #f472b6;
+  /* pink-400 */
+
+  /* Modern UI Variables (Glass Effect - Dark) */
+  --glass-bg: rgba(15, 23, 42, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -34,8 +120,30 @@ html, body, #root {
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: var(--color-bg-primary);
+  /* Slightly darker (Slate-100) so cards pop */
+  /* Stronger mesh gradient to make glass effect visible */
+  background-image:
+    radial-gradient(at 0% 0%, var(--bg-gradient-1) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, var(--bg-gradient-2) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, var(--bg-gradient-3) 0px, transparent 50%);
+  background-attachment: fixed;
   color: var(--color-text-primary);
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Centralized Glass Utility */
+.glass-card {
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.15);
 }
 
 /* Scrollbar styling for dark mode */

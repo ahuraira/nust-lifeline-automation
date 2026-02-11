@@ -24,10 +24,21 @@ const CONFIG = {
 
   // --- Standard Pledge Amounts (PKR) ---
   pledgeAmounts: {
-    oneMonth: 25000,
-    oneSemester: 135000,
-    oneYear: 270000,
-    fourYears: 1080000
+    oneMonth: 20000,
+    oneSemester: 120000,
+    oneYear: 240000,
+    fourYears: 960000
+  },
+
+  // --- Chapter Targets ---
+  chapterTargets: {
+    'Pakistan': { students: 10, amount: 2400000 },
+    'KSA': { students: 8, amount: 1920000 },
+    'UAE': { students: 8, amount: 1920000 },
+    'Germany': { students: 8, amount: 1920000 },
+    'Canada': { students: 8, amount: 1920000 },
+    'Australia': { students: 8, amount: 1920000 },
+    'UK': { students: 8, amount: 1920000 }
   },
 
   // --- AI Configuration ---

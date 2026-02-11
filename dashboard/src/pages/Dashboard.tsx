@@ -7,13 +7,14 @@ import { Leaderboard } from '../components/Leaderboard';
 import { CompositionCharts } from '../components/CompositionCharts';
 import { PledgeTracker } from '../components/PledgeTracker';
 import { TrendsChart } from '../components/TrendsChart';
-import { Users, Wallet, TrendingUp, Heart, AlertCircle } from 'lucide-react';
+import { Users, Wallet, TrendingUp, Heart, AlertCircle, Repeat } from 'lucide-react';
 
 // Mock data for development (before API is deployed)
 const mockSummary = {
     impact: { studentsFunded: 42, studentsAwaiting: 12, pledgeCount: 85 },
     financials: {
         totalPledged: 9500000,
+        totalEffective: 9500000,  // For campaign progress bar
         totalVerified: 7200000,
         totalAllocated: 5800000,
         balance: 1400000,
@@ -40,17 +41,25 @@ const mockSummary = {
         { week: 'Week 7', pledges: 45, amount: 4500000, verified: 3500000 },
         { week: 'Week 8', pledges: 85, amount: 9500000, verified: 7200000 },
     ],
+    subscriptions: {
+        active: 12,
+        total: 15,
+        mrr: 300000,
+        studentsFundedMonthly: 12,
+        collectionRate: 87
+    },
     lastUpdated: new Date().toISOString(),
 };
 
 const mockChapters = {
     data: [
-        { chapter: 'Karachi', pledged: 3500000, verified: 2800000, count: 32, realizationRate: 80 },
-        { chapter: 'Islamabad', pledged: 2200000, verified: 1800000, count: 20, realizationRate: 82 },
-        { chapter: 'Lahore', pledged: 1500000, verified: 1100000, count: 12, realizationRate: 73 },
-        { chapter: 'USA (North America)', pledged: 1200000, verified: 900000, count: 5, realizationRate: 75 },
-        { chapter: 'UK', pledged: 600000, verified: 600000, count: 8, realizationRate: 100 },
-        { chapter: 'KSA', pledged: 500000, verified: 0, count: 8, realizationRate: 0 },
+        { chapter: 'Pakistan', effective: 3500000, verified: 2800000, count: 32, studentsFunded: 14, target: 2400000, targetStudents: 10, progress: 145 },
+        { chapter: 'KSA', effective: 2200000, verified: 1800000, count: 20, studentsFunded: 9, target: 1920000, targetStudents: 8, progress: 114 },
+        { chapter: 'UAE', effective: 1500000, verified: 1100000, count: 12, studentsFunded: 6, target: 1920000, targetStudents: 8, progress: 78 },
+        { chapter: 'Germany', effective: 900000, verified: 700000, count: 8, studentsFunded: 3, target: 1920000, targetStudents: 8, progress: 46 },
+        { chapter: 'Canada', effective: 600000, verified: 500000, count: 5, studentsFunded: 2, target: 1920000, targetStudents: 8, progress: 31 },
+        { chapter: 'Australia', effective: 500000, verified: 400000, count: 4, studentsFunded: 2, target: 1920000, targetStudents: 8, progress: 26 },
+        { chapter: 'UK', effective: 300000, verified: 300000, count: 4, studentsFunded: 1, target: 1920000, targetStudents: 8, progress: 15 },
     ],
     lastUpdated: new Date().toISOString(),
 };
@@ -87,13 +96,14 @@ export function Dashboard() {
     return (
         <div className="space-y-6">
             {/* Impact KPIs Row */}
-            <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <KPICard
                     title="Students Funded"
                     value={summaryData.impact.studentsFunded}
                     icon={<Heart className="w-5 h-5 text-emerald-400" />}
                     color="emerald"
                     isLoading={summaryLoading}
+                    tooltip="Students fully funded based on effective amount (PKR 270K per student)"
                 />
                 <KPICard
                     title="Awaiting Support"
@@ -101,6 +111,7 @@ export function Dashboard() {
                     icon={<AlertCircle className="w-5 h-5 text-amber-400" />}
                     color="amber"
                     isLoading={summaryLoading}
+                    tooltip="Students with pending hostel dues who need funding"
                 />
                 <KPICard
                     title="Total Pledges"
@@ -108,18 +119,29 @@ export function Dashboard() {
                     icon={<Users className="w-5 h-5 text-blue-400" />}
                     color="blue"
                     isLoading={summaryLoading}
+                    tooltip="Total number of donation pledges received (one-time + recurring)"
+                />
+                <KPICard
+                    title="Funded Monthly"
+                    value={summaryData.subscriptions?.studentsFundedMonthly ?? 0}
+                    suffix=" students"
+                    icon={<Repeat className="w-5 h-5 text-cyan-400" />}
+                    color="cyan"
+                    isLoading={summaryLoading}
+                    tooltip="Students with recurring monthly support from subscription donors"
                 />
             </section>
 
             {/* Funding Gap Bar */}
             <FundingGapBar
                 raised={summaryData.financials.totalVerified}
+                pledged={summaryData.financials.totalEffective}
                 gap={summaryData.financials.fundingGap}
                 isLoading={summaryLoading}
             />
 
             {/* Financial KPIs Row */}
-            <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <KPICard
                     title="Total Pledged"
                     value={summaryData.financials.totalPledged}
@@ -128,6 +150,18 @@ export function Dashboard() {
                     icon={<Wallet className="w-5 h-5 text-purple-400" />}
                     color="purple"
                     isLoading={summaryLoading}
+                    tooltip="Total amount promised by all donors (one-time + recurring)"
+                />
+                <KPICard
+                    title="Monthly Recurring"
+                    value={summaryData.subscriptions?.mrr ?? 0}
+                    prefix="PKR "
+                    formatter={formatCurrency}
+                    suffix="/mo"
+                    icon={<Repeat className="w-5 h-5 text-cyan-400" />}
+                    color="cyan"
+                    isLoading={summaryLoading}
+                    tooltip="Monthly revenue from active subscription donors"
                 />
                 <KPICard
                     title="Verified"
@@ -137,15 +171,7 @@ export function Dashboard() {
                     icon={<TrendingUp className="w-5 h-5 text-emerald-400" />}
                     color="emerald"
                     isLoading={summaryLoading}
-                />
-                <KPICard
-                    title="Allocated"
-                    value={summaryData.financials.totalAllocated}
-                    prefix="PKR "
-                    formatter={formatCurrency}
-                    icon={<Users className="w-5 h-5 text-blue-400" />}
-                    color="blue"
-                    isLoading={summaryLoading}
+                    tooltip="Total funds verified through receipt submission"
                 />
                 <KPICard
                     title="Balance"
@@ -155,6 +181,7 @@ export function Dashboard() {
                     icon={<Wallet className="w-5 h-5 text-cyan-400" />}
                     color="cyan"
                     isLoading={summaryLoading}
+                    tooltip="Available funds ready for allocation (Verified - Allocated)"
                 />
             </section>
 

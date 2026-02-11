@@ -8,7 +8,8 @@ export interface ImpactMetrics {
 }
 
 export interface FinancialMetrics {
-    totalPledged: number;
+    totalPledged: number;      // Now using effective amounts
+    totalEffective: number;    // For campaign progress bar dashed line
     totalVerified: number;
     totalAllocated: number;
     balance: number;
@@ -40,12 +41,21 @@ export interface WeeklyTrend {
     verified: number;
 }
 
+export interface SubscriptionMetrics {
+    active: number;
+    total: number;
+    mrr: number;                  // Monthly Recurring Revenue (PKR)
+    studentsFundedMonthly: number; // Students covered by active subscriptions
+    collectionRate: number;        // 0-100 percentage
+}
+
 export interface SummaryResponse {
     impact: ImpactMetrics;
     financials: FinancialMetrics;
     processingDays: ProcessingDays;
     pipeline: PipelineBreakdown;
     trends: WeeklyTrend[];
+    subscriptions?: SubscriptionMetrics;
     lastUpdated: string;
 }
 
@@ -70,10 +80,13 @@ export interface FlowResponse {
 // === /chapters endpoint ===
 export interface ChapterData {
     chapter: string;
-    pledged: number;
+    effective: number;       // Effective amount (replaces pledged)
     verified: number;
     count: number;
-    realizationRate: number;
+    studentsFunded: number;  // Students fully funded by this chapter
+    target: number;          // Target amount
+    targetStudents: number;  // Target students
+    progress: number;        // Progress % (0-100)
 }
 
 export interface ChaptersResponse {

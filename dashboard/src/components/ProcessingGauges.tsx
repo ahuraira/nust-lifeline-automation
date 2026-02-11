@@ -21,9 +21,9 @@ function Gauge({ label, value, maxValue, description }: GaugeProps) {
 
     // Color based on performance (lower is better)
     const getColor = () => {
-        if (value <= maxValue * 0.3) return 'stroke-emerald-400';
-        if (value <= maxValue * 0.6) return 'stroke-amber-400';
-        return 'stroke-rose-400';
+        if (value <= maxValue * 0.3) return 'stroke-[var(--color-status-success)]';
+        if (value <= maxValue * 0.6) return 'stroke-[var(--color-status-warning)]';
+        return 'stroke-[var(--color-status-error)]';
     };
 
     return (
@@ -36,7 +36,7 @@ function Gauge({ label, value, maxValue, description }: GaugeProps) {
                         cy="50"
                         r="40"
                         fill="none"
-                        stroke="#334155"
+                        className="stroke-slate-200 dark:stroke-slate-700"
                         strokeWidth="8"
                         strokeDasharray={circumference * 0.75}
                         strokeDashoffset={0}
@@ -60,14 +60,14 @@ function Gauge({ label, value, maxValue, description }: GaugeProps) {
 
                 {/* Center value */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-xl font-bold text-white">{value}</span>
-                    <span className="text-xs text-slate-400">days</span>
+                    <span className="text-xl font-bold text-slate-900 dark:text-white">{value}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">days</span>
                 </div>
             </div>
 
             <div className="text-center mt-2">
-                <p className="text-sm font-medium text-slate-200">{label}</p>
-                <p className="text-xs text-slate-400">{description}</p>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
             </div>
         </div>
     );
@@ -76,11 +76,11 @@ function Gauge({ label, value, maxValue, description }: GaugeProps) {
 export function ProcessingGauges({ data, isLoading }: ProcessingGaugesProps) {
     if (isLoading) {
         return (
-            <div className="bg-slate-800/30 rounded-xl border border-slate-700/30 p-6">
+            <div className="glass-card rounded-xl p-6">
                 <div className="grid grid-cols-3 gap-4">
                     {[1, 2, 3].map((i) => (
                         <div key={i} className="flex flex-col items-center">
-                            <div className="w-24 h-24 rounded-full bg-slate-700/50 animate-pulse" />
+                            <div className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-700/50 animate-pulse" />
                         </div>
                     ))}
                 </div>
@@ -93,9 +93,9 @@ export function ProcessingGauges({ data, isLoading }: ProcessingGaugesProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.3 }}
-            className="bg-slate-800/30 rounded-xl border border-slate-700/30 p-6"
+            className="glass-card rounded-xl p-8"
         >
-            <h3 className="text-sm font-medium text-slate-300 mb-4 text-center">
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-4 text-center">
                 Processing Times (Avg Days)
             </h3>
 

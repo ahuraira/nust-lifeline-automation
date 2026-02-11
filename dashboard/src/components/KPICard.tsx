@@ -17,6 +17,7 @@ interface KPICardProps {
     color: 'indigo' | 'emerald' | 'amber' | 'rose' | 'purple' | 'blue' | 'cyan';
     isLoading?: boolean;
     formatter?: (value: number) => string;
+    tooltip?: string;
 }
 
 const colorClasses = {
@@ -39,7 +40,7 @@ const bgClasses = {
     cyan: 'bg-cyan-500/10',
 };
 
-export function KPICard({ title, value, prefix = '', suffix = '', trend, icon, color, isLoading, formatter }: KPICardProps) {
+export function KPICard({ title, value, prefix = '', suffix = '', trend, icon, color, isLoading, formatter, tooltip }: KPICardProps) {
     const TrendIcon = trend
         ? (trend.isPositive ? TrendingUp : TrendingDown)
         : Minus;
@@ -60,7 +61,8 @@ export function KPICard({ title, value, prefix = '', suffix = '', trend, icon, c
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
-            className="relative overflow-hidden rounded-2xl bg-slate-800/50 border border-slate-700/50 p-6"
+            className="glass-card relative overflow-hidden rounded-2xl p-6"
+            title={tooltip}
         >
             {/* Gradient accent */}
             <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${colorClasses[color]}`} />
@@ -79,12 +81,12 @@ export function KPICard({ title, value, prefix = '', suffix = '', trend, icon, c
             </div>
 
             <div className="space-y-1">
-                <p className="text-sm text-slate-400">{title}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{title}</p>
 
                 {isLoading ? (
-                    <div className="h-9 bg-slate-700/50 rounded animate-pulse" />
+                    <div className="h-9 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" />
                 ) : (
-                    <p className="text-3xl font-bold text-white">
+                    <p className="text-3xl font-bold text-slate-900 dark:text-white">
                         {prefix}
                         <CountUp
                             end={value}

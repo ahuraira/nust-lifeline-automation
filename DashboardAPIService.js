@@ -115,6 +115,51 @@ function getOperationsSsId_() {
 }
 
 // ============================================================================
+// HELPER: Calculate Effective Amount
+// ============================================================================
+
+/**
+ * Calculate the "effective amount" for a pledge based on its state.
+ * - Still in '1 - Pledged': use pledged amount (best estimate)
+ * - Past '1 - Pledged' (one-time): use verified amount (actual money)
+ * - Active subscription: verified + (remaining months × monthly amount)
+ * - Completed/Cancelled subscription: verified only
+ * 
+ * @param {Object} pledge - Pledge row from Fact_Pledges
+ * @param {Object} subscription - Subscription row from Fact_Subscriptions (if exists)
+ * @returns {number} Effective amount in PKR
+ */
+function calculateEffectiveAmount(pledge, subscription) {
+    const pledgedAmount = Number(pledge[2]) || 0;  // Amount_PKR
+    const verifiedAmount = Number(pledge[15]) || 0; // Verified_Total
+    const status = (pledge[5] || '').toString();    // Status
+
+    // If subscription exists and is active
+    if (subscription) {
+        const subStatus = (subscription[5] || '').toString();
+        const monthlyAmount = Number(subscription[2]) || 0;
+        const durationMonths = Number(subscription[3]) || 0;
+        const amountReceived = Number(subscription[6]) || 0;
+        const amountExpected = Number(subscription[7]) || 0;
+
+        if (subStatus === 'Active' || subStatus === 'Overdue') {
+            // Calculate remaining commitment
+            const remainingAmount = Math.max(0, amountExpected - amountReceived);
+            return verifiedAmount + remainingAmount;
+        }
+    }
+
+    // For non-subscription or completed subscriptions
+    if (status.includes('1 - Pledged') || status.includes('1a - Partial')) {
+        // Still pending proof - use pledged amount
+        return pledgedAmount;
+    }
+
+    // Past pledged status - use verified amount
+    return verifiedAmount;
+}
+
+// ============================================================================
 // ENDPOINT: /summary - Command Center Data
 // Cache: 15 minutes
 // ============================================================================
@@ -202,25 +247,60 @@ function getSummaryData() {
         totalAllocated += allocAmount;
     });
 
+    // === SUBSCRIPTION METRICS & LOOKUP ===
+    const subsSheet = ss.getSheetByName('Fact_Subscriptions');
+    let subscriptions = { active: 0, total: 0, mrr: 0, studentsFundedMonthly: 0, collectionRate: 0 };
+    const subscriptionByPledgeId = {}; // Map pledge ID to subscription row
+
+    if (subsSheet) {
+        const subsData = subsSheet.getDataRange().getValues().slice(1); // Skip header
+        // Col 1: Pledge_ID, Col 2: Monthly_Amount, Col 5: Status, Col 6: Amount_Received, Col 7: Amount_Expected
+
+        subsData.forEach(s => {
+            const pledgeId = s[1]; // Pledge_ID
+            subscriptionByPledgeId[pledgeId] = s;
+        });
+
+        const activeSubs = subsData.filter(s => s[5] === 'Active' || s[5] === 'Overdue');
+        subscriptions.active = activeSubs.length;
+        subscriptions.total = subsData.length;
+        subscriptions.mrr = activeSubs.reduce((sum, s) => sum + (Number(s[2]) || 0), 0);
+        subscriptions.studentsFundedMonthly = Math.floor(subscriptions.mrr / CONFIG.pledgeAmounts.oneMonth);
+        const totalExpected = subsData.reduce((sum, s) => sum + (Number(s[7]) || 0), 0);
+        const totalReceived = subsData.reduce((sum, s) => sum + (Number(s[6]) || 0), 0);
+        subscriptions.collectionRate = totalExpected > 0
+            ? Math.round((totalReceived / totalExpected) * 100) : 0;
+    }
+
+    // === FINANCIAL METRICS (using Effective Amounts) ===
+    let totalEffective = 0;
+
     pledges.forEach(p => {
         const pledgeId = p[0]; // Pledge_ID
         const pledgedAmount = Number(p[2]) || 0; // Amount_PKR (pledged)
         const verifiedAmount = Number(p[15]) || 0; // Verified_Total
         const status = (p[5] || 'Unknown').toString(); // Status column
 
-        totalPledged += pledgedAmount;
-        totalVerified += verifiedAmount;
+        // Get subscription if exists
+        const subscription = subscriptionByPledgeId[pledgeId];
 
-        // Determine which pipeline stage and use correct amount
+        // Calculate effective amount
+        const effectiveAmount = calculateEffectiveAmount(p, subscription);
+
+        totalPledged += effectiveAmount;  // Now using effective amounts
+        totalVerified += verifiedAmount;   // Keep as actual verified
+        totalEffective += effectiveAmount;
+
+        // Determine which pipeline stage and use effective amount
         if (status.includes('1 - Pledged') || status.includes('1a - Partial')) {
-            // Pending Proof: use PLEDGED amount (what was promised)
+            // Pending Proof: use effective amount
             pipelineData.pendingProof.count++;
-            pipelineData.pendingProof.amount += pledgedAmount;
+            pipelineData.pendingProof.amount += effectiveAmount;
         }
         else if (status.includes('2 - Proof') || status.includes('3 - Verified')) {
-            // Proof Received: use VERIFIED amount (what was confirmed from receipts)
+            // Proof Received: use effective amount
             pipelineData.proofReceived.count++;
-            pipelineData.proofReceived.amount += verifiedAmount;
+            pipelineData.proofReceived.amount += effectiveAmount;
         }
         else if (status.includes('4 - Partial') || status.includes('5 - Fully Allocated')) {
             // Allocated: use ALLOCATED amount from allocations table
@@ -237,6 +317,9 @@ function getSummaryData() {
     const balance = totalVerified - totalAllocated;
     const fundingGap = students.reduce((sum, s) => sum + (Number(s[8]) || 0), 0);
 
+    // === STUDENTS FUNDED (Amount-Based) ===
+    const studentsFundedByAmount = Math.floor(totalEffective / CONFIG.pledgeAmounts.oneYear);
+
     // === PROCESSING TIMES ===
     const processingDays = calculateProcessingTimes(pledges, allocs);
 
@@ -248,7 +331,7 @@ function getSummaryData() {
 
     const result = {
         impact: {
-            studentsFunded,
+            studentsFunded: studentsFundedByAmount,  // Now amount-based
             studentsAwaiting,
             pledgeCount: pledges.length
         },
@@ -262,6 +345,7 @@ function getSummaryData() {
         processingDays,
         pipeline,
         trends,
+        subscriptions,
         lastUpdated: new Date().toISOString()
     };
 
@@ -289,7 +373,7 @@ function getEmptySummary() {
 
     return {
         impact: { studentsFunded: 0, studentsAwaiting: 0, pledgeCount: 0 },
-        financials: { totalPledged: 0, totalVerified: 0, totalAllocated: 0, balance: 0, fundingGap: 0 },
+        financials: { totalPledged: 0, totalEffective: 0, totalVerified: 0, totalAllocated: 0, balance: 0, fundingGap: 0 },
         processingDays: { pledgeToReceipt: 0, receiptToAllocation: 0, allocationToHostel: 0 },
         pipeline: {
             pendingProof: { count: 0, amount: 0 },
@@ -298,6 +382,7 @@ function getEmptySummary() {
             hostelVerified: { count: 0, amount: 0 }
         },
         trends,
+        subscriptions: { active: 0, total: 0, mrr: 0, studentsFundedMonthly: 0, collectionRate: 0 },
         lastUpdated: new Date().toISOString()
     };
 }
@@ -485,30 +570,79 @@ function getChaptersData() {
     }
 
     const pledges = pledgesSheet.getDataRange().getValues().slice(1);
+
+    // Build subscription lookup
+    const subsSheet = ss.getSheetByName('Fact_Subscriptions');
+    const subscriptionByPledgeId = {};
+    if (subsSheet) {
+        const subsData = subsSheet.getDataRange().getValues().slice(1);
+        subsData.forEach(s => {
+            subscriptionByPledgeId[s[1]] = s; // s[1] is Pledge_ID
+        });
+    }
+
     const chapters = {};
 
+    // 1. Process System Pledges
     pledges.forEach(p => {
         const chapter = p[4] || 'Other';
-        const pledged = Number(p[2]) || 0;
-        const verified = Number(p[14]) || 0;
+        const subscription = subscriptionByPledgeId[p[0]]; // p[0] is Pledge_ID
+        const effectiveAmount = calculateEffectiveAmount(p, subscription);
+        const verified = Number(p[15]) || 0; // Verified_Total
 
         if (!chapters[chapter]) {
-            chapters[chapter] = { pledged: 0, verified: 0, count: 0 };
+            chapters[chapter] = { effective: 0, verified: 0, count: 0 };
         }
-        chapters[chapter].pledged += pledged;
+        chapters[chapter].effective += effectiveAmount;
         chapters[chapter].verified += verified;
         chapters[chapter].count++;
     });
 
+    // 2. Process External Transfers (Manual Sheet)
+    const extSheet = ss.getSheetByName('Dim_External_Transfers');
+    if (extSheet) {
+        const extData = extSheet.getDataRange().getValues().slice(1);
+        // Columns: Donor_ID | Chapter | Pledged_Amount | Verified_Amount | Status
+        extData.forEach(row => {
+            const chapter = row[1]; // Chapter
+            const pledged = Number(row[2]) || 0;
+            const verified = Number(row[3]) || 0;
+
+            if (chapter && (pledged > 0 || verified > 0)) {
+                if (!chapters[chapter]) {
+                    chapters[chapter] = { effective: 0, verified: 0, count: 0 };
+                }
+                // Determine effective amount for external pledge
+                // If verified > 0, use verified. Else use pledged.
+                const effective = verified > 0 ? verified : pledged;
+
+                chapters[chapter].effective += effective;
+                chapters[chapter].verified += verified;
+                chapters[chapter].count++; // Count as a pledge
+            }
+        });
+    }
+
     const data = Object.entries(chapters)
-        .map(([chapter, stats]) => ({
-            chapter,
-            pledged: stats.pledged,
-            verified: stats.verified,
-            count: stats.count,
-            realizationRate: stats.pledged > 0 ? Math.round((stats.verified / stats.pledged) * 100) : 0
-        }))
-        .sort((a, b) => b.pledged - a.pledged)
+        .map(([chapter, stats]) => {
+            const target = CONFIG.chapterTargets[chapter];
+            // Calculate Students Funded based on Effective Amount / Cost Per Student
+            const studentsFunded = Math.floor(stats.effective / CONFIG.pledgeAmounts.oneYear);
+
+            return {
+                chapter,
+                effective: stats.effective,
+                verified: stats.verified,
+                count: stats.count,
+                studentsFunded: studentsFunded,
+                target: target ? target.amount : 0,
+                targetStudents: target ? target.students : 0,
+                progress: target && target.amount > 0
+                    ? Math.round((stats.effective / target.amount) * 100)
+                    : 0
+            };
+        })
+        .sort((a, b) => b.progress - a.progress)  // Sort by progress %
         .slice(0, 10);
 
     const result = { data, lastUpdated: new Date().toISOString() };

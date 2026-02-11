@@ -8,9 +8,14 @@ interface CompositionChartsProps {
 }
 
 const COLORS = {
-    zakat: '#10b981', // emerald
-    general: '#6366f1', // indigo
-    duration: ['#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'], // amber, blue, purple, pink
+    zakat: 'var(--color-chart-1)', // emerald
+    general: 'var(--color-chart-2)', // indigo
+    duration: [
+        'var(--color-chart-3)', // amber
+        'var(--color-chart-4)', // blue
+        'var(--color-chart-5)', // purple
+        'var(--color-chart-6)', // pink
+    ],
 };
 
 interface DonutProps {
@@ -22,7 +27,7 @@ interface DonutProps {
 function Donut({ title, data, colors }: DonutProps) {
     return (
         <div className="flex flex-col items-center">
-            <h4 className="text-xs text-slate-400 mb-2">{title}</h4>
+            <h4 className="text-xs text-[var(--color-text-secondary)] mb-2">{title}</h4>
             <div className="w-32 h-32">
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -45,11 +50,15 @@ function Donut({ title, data, colors }: DonutProps) {
                         </Pie>
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: '#1e293b',
-                                border: '1px solid #334155',
-                                borderRadius: '8px',
-                                color: '#fff'
+                                backgroundColor: 'var(--glass-bg)',
+                                backdropFilter: 'var(--glass-blur)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '12px',
+                                boxShadow: 'var(--glass-shadow)',
+                                padding: '12px',
+                                color: 'var(--color-text-primary)'
                             }}
+                            itemStyle={{ color: 'var(--color-text-primary)' }}
                             formatter={(value, name) => {
                                 const numVal = Number(value) || 0;
                                 return [
@@ -69,8 +78,10 @@ function Donut({ title, data, colors }: DonutProps) {
                             className="w-2 h-2 rounded-full"
                             style={{ backgroundColor: colors[index % colors.length] }}
                         />
-                        <span className="text-slate-300">{item.name}</span>
-                        <span className="text-slate-500">{item.percent}%</span>
+                        <span className="text-xs text-[var(--color-text-primary)] font-medium">
+                            {item.name}
+                        </span>
+                        <span className="text-xs text-[var(--color-text-secondary)]">{item.percent}%</span>
                     </div>
                 ))}
             </div>
@@ -81,11 +92,11 @@ function Donut({ title, data, colors }: DonutProps) {
 export function CompositionCharts({ data, isLoading }: CompositionChartsProps) {
     if (isLoading) {
         return (
-            <div className="bg-slate-800/30 rounded-xl border border-slate-700/30 p-6">
+            <div className="glass-card rounded-xl p-6">
                 <div className="grid grid-cols-2 gap-6">
                     {[1, 2].map((i) => (
                         <div key={i} className="flex flex-col items-center">
-                            <div className="w-32 h-32 rounded-full bg-slate-700/50 animate-pulse" />
+                            <div className="w-32 h-32 rounded-full bg-slate-200 dark:bg-slate-700/50 animate-pulse" />
                         </div>
                     ))}
                 </div>
@@ -109,9 +120,9 @@ export function CompositionCharts({ data, isLoading }: CompositionChartsProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.3 }}
-            className="bg-slate-800/30 rounded-xl border border-slate-700/30 p-6"
+            className="glass-card rounded-xl p-8"
         >
-            <h3 className="text-sm font-medium text-slate-300 mb-4 text-center">
+            <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-4 text-center">
                 Fund Composition
             </h3>
 

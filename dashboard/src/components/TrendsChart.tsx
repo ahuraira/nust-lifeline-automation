@@ -23,7 +23,7 @@ function formatCurrency(amount: number): string {
 export function TrendsChart({ data, isLoading }: TrendsChartProps) {
     if (isLoading) {
         return (
-            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
+            <div className="glass-card rounded-xl p-6">
                 <div className="h-64 flex items-center justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400" />
                 </div>
@@ -33,7 +33,7 @@ export function TrendsChart({ data, isLoading }: TrendsChartProps) {
 
     if (!data || data.length === 0) {
         return (
-            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
+            <div className="glass-card rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 bg-emerald-500/20 rounded-lg">
                         <TrendingUp className="w-5 h-5 text-emerald-400" />
@@ -60,22 +60,22 @@ export function TrendsChart({ data, isLoading }: TrendsChartProps) {
     const totalVerified = data.reduce((sum, d) => sum + (d.verified || 0), 0);
 
     return (
-        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
+        <div className="glass-card rounded-xl p-8">
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-emerald-500/20 rounded-lg">
-                        <TrendingUp className="w-5 h-5 text-emerald-400" />
+                    <div className="p-2 bg-[var(--color-status-success)]/10 rounded-lg">
+                        <TrendingUp className="w-5 h-5 text-[var(--color-status-success)]" />
                     </div>
                     <div>
-                        <h3 className="text-lg font-semibold text-white">Weekly Trends</h3>
-                        <p className="text-sm text-slate-400">Last 8 weeks</p>
+                        <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">Weekly Trends</h3>
+                        <p className="text-sm text-[var(--color-text-secondary)]">Last 8 weeks</p>
                     </div>
                 </div>
                 <div className="text-right">
-                    <p className="text-2xl font-bold text-emerald-400">{totalPledges}</p>
-                    <p className="text-sm text-slate-400">
-                        pledges • <span className="text-purple-400">PKR {formatCurrency(totalPledged)}</span> pledged • <span className="text-emerald-400">PKR {formatCurrency(totalVerified)}</span> verified
+                    <p className="text-2xl font-bold text-[var(--color-status-success)]">{totalPledges}</p>
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                        pledges • <span className="text-[var(--color-chart-5)]">PKR {formatCurrency(totalPledged)}</span> pledged • <span className="text-[var(--color-status-success)]">PKR {formatCurrency(totalVerified)}</span> verified
                     </p>
                 </div>
             </div>
@@ -86,40 +86,44 @@ export function TrendsChart({ data, isLoading }: TrendsChartProps) {
                     <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
                             <linearGradient id="pledgedGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                <stop offset="5%" stopColor="var(--color-chart-5)" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="var(--color-chart-5)" stopOpacity={0} />
                             </linearGradient>
                             <linearGradient id="verifiedGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                <stop offset="5%" stopColor="var(--color-status-success)" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="var(--color-status-success)" stopOpacity={0} />
                             </linearGradient>
                         </defs>
                         <CartesianGrid
                             strokeDasharray="3 3"
-                            stroke="#334155"
+                            stroke="var(--color-grid)"
                             vertical={false}
                         />
                         <XAxis
                             dataKey="week"
                             axisLine={false}
                             tickLine={false}
-                            tick={{ fill: '#94a3b8', fontSize: 12 }}
+                            tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }}
                         />
                         <YAxis
                             axisLine={false}
                             tickLine={false}
-                            tick={{ fill: '#94a3b8', fontSize: 12 }}
+                            tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }}
                             tickFormatter={(value) => formatCurrency(value)}
                             width={50}
                         />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: '#1e293b',
-                                border: '1px solid #334155',
-                                borderRadius: '8px',
-                                boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
+                                backgroundColor: 'var(--glass-bg)',
+                                backdropFilter: 'var(--glass-blur)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '12px',
+                                boxShadow: 'var(--glass-shadow)',
+                                padding: '12px',
+                                color: 'var(--color-text-primary)'
                             }}
-                            labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+                            itemStyle={{ color: 'var(--color-text-primary)' }}
+                            labelStyle={{ color: 'var(--color-text-primary)', fontWeight: '600', marginBottom: '8px' }}
                             formatter={(value, name) => {
                                 const numValue = Number(value) || 0;
                                 const label = name === 'pledged' ? 'Pledged' : 'Verified';
@@ -129,7 +133,7 @@ export function TrendsChart({ data, isLoading }: TrendsChartProps) {
                         <Legend
                             wrapperStyle={{ paddingTop: '10px' }}
                             formatter={(value) => (
-                                <span className="text-slate-400 text-sm">
+                                <span className="text-slate-500 dark:text-slate-400 text-sm">
                                     {value === 'pledged' ? 'Amount Pledged' : 'Amount Verified'}
                                 </span>
                             )}
@@ -137,7 +141,7 @@ export function TrendsChart({ data, isLoading }: TrendsChartProps) {
                         <Area
                             type="monotone"
                             dataKey="pledged"
-                            stroke="#8b5cf6"
+                            stroke="var(--color-chart-5)"
                             strokeWidth={2}
                             fill="url(#pledgedGradient)"
                             name="pledged"
@@ -145,7 +149,7 @@ export function TrendsChart({ data, isLoading }: TrendsChartProps) {
                         <Area
                             type="monotone"
                             dataKey="verified"
-                            stroke="#10b981"
+                            stroke="var(--color-status-success)"
                             strokeWidth={2}
                             fill="url(#verifiedGradient)"
                             name="verified"

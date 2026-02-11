@@ -12,10 +12,10 @@ const statusIcons: Record<string, React.ReactNode> = {
 };
 
 const statusColors: Record<string, string> = {
-    'Pledged': 'bg-amber-500',
-    'Proof Received': 'bg-blue-500',
-    'Allocated': 'bg-purple-500',
-    'Hostel Verified': 'bg-emerald-500',
+    'Pledged': 'bg-[var(--color-status-warning)]',
+    'Proof Received': 'bg-[var(--color-status-info)]',
+    'Allocated': 'bg-[var(--color-chart-5)]',
+    'Hostel Verified': 'bg-[var(--color-status-success)]',
 };
 
 export function PledgeTracker() {
@@ -42,11 +42,11 @@ export function PledgeTracker() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.4 }}
-            className="bg-slate-800/30 rounded-xl border border-slate-700/30 p-6"
+            className="glass-card rounded-xl p-8"
         >
             <div className="flex items-center gap-2 mb-4">
-                <Search className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-sm font-medium text-slate-300">Track Your Pledge</h3>
+                <Search className="w-5 h-5 text-[var(--color-status-info)]" />
+                <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Track Your Pledge</h3>
             </div>
 
             {/* Search Form */}
@@ -56,11 +56,11 @@ export function PledgeTracker() {
                     value={searchId}
                     onChange={(e) => setSearchId(e.target.value)}
                     placeholder="Enter Pledge ID (e.g., PLD-00042)"
-                    className="flex-1 px-4 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    className="flex-1 px-4 py-2 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text-primary)] placeholder-[var(--color-text-secondary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-status-info)] focus:border-transparent"
                 />
                 <button
                     type="submit"
-                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors font-medium"
+                    className="px-4 py-2 bg-[var(--color-status-info)] hover:opacity-90 text-white rounded-lg transition-colors font-medium"
                 >
                     Track
                 </button>
@@ -77,7 +77,7 @@ export function PledgeTracker() {
                         className="py-8 text-center"
                     >
                         <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                        <p className="text-slate-400 text-sm">Searching...</p>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm">Searching...</p>
                     </motion.div>
                 )}
 
@@ -89,8 +89,8 @@ export function PledgeTracker() {
                         exit={{ opacity: 0 }}
                         className="py-6 text-center"
                     >
-                        <AlertCircle className="w-8 h-8 text-rose-400 mx-auto mb-2" />
-                        <p className="text-rose-400 text-sm">Failed to fetch pledge data</p>
+                        <AlertCircle className="w-8 h-8 text-rose-500 dark:text-rose-400 mx-auto mb-2" />
+                        <p className="text-rose-500 dark:text-rose-400 text-sm">Failed to fetch pledge data</p>
                     </motion.div>
                 )}
 
@@ -102,10 +102,10 @@ export function PledgeTracker() {
                         exit={{ opacity: 0, y: -10 }}
                     >
                         {/* Pledge Summary */}
-                        <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg mb-4">
+                        <div className="flex items-center justify-between p-3 bg-[var(--color-bg-secondary)] rounded-lg mb-4">
                             <div>
-                                <p className="font-semibold text-white">{data.pledgeId}</p>
-                                <p className="text-xs text-slate-400">PKR {formatAmount(data.amount)}</p>
+                                <p className="font-semibold text-[var(--color-text-primary)]">{data.pledgeId}</p>
+                                <p className="text-xs text-[var(--color-text-secondary)]">PKR {formatAmount(data.amount)}</p>
                             </div>
                             <div className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[data.currentStatus] || 'bg-slate-600'} text-white`}>
                                 {data.currentStatus}
@@ -114,7 +114,7 @@ export function PledgeTracker() {
 
                         {/* Timeline */}
                         <div className="relative pl-6">
-                            <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-slate-600" />
+                            <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-[var(--color-bg-secondary)]" />
 
                             {data.timeline.map((entry: TimelineEntry, index: number) => (
                                 <motion.div
@@ -125,15 +125,15 @@ export function PledgeTracker() {
                                     className="relative pb-4 last:pb-0"
                                 >
                                     {/* Dot */}
-                                    <div className={`absolute -left-4 w-4 h-4 rounded-full flex items-center justify-center ${statusColors[entry.status] || 'bg-slate-600'}`}>
+                                    <div className={`absolute -left-4 w-4 h-4 rounded-full flex items-center justify-center ${statusColors[entry.status] || 'bg-slate-400 dark:bg-slate-600'}`}>
                                         {statusIcons[entry.status] || <div className="w-2 h-2 bg-white rounded-full" />}
                                     </div>
 
                                     {/* Content */}
                                     <div className="ml-4">
-                                        <p className="text-sm font-medium text-white">{entry.status}</p>
-                                        <p className="text-xs text-slate-400">{entry.note}</p>
-                                        <p className="text-xs text-slate-500 mt-1">{entry.date}</p>
+                                        <p className="text-sm font-medium text-[var(--color-text-primary)]">{entry.status}</p>
+                                        <p className="text-xs text-[var(--color-text-secondary)]">{entry.note}</p>
+                                        <p className="text-xs text-[var(--color-text-secondary)] opacity-70 mt-1">{entry.date}</p>
                                     </div>
                                 </motion.div>
                             ))}
@@ -149,9 +149,9 @@ export function PledgeTracker() {
                         exit={{ opacity: 0 }}
                         className="py-6 text-center"
                     >
-                        <AlertCircle className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                        <p className="text-amber-400 text-sm">{data.error}</p>
-                        <p className="text-slate-500 text-xs mt-1">Check your Pledge ID and try again</p>
+                        <AlertCircle className="w-8 h-8 text-amber-500 dark:text-amber-400 mx-auto mb-2" />
+                        <p className="text-amber-600 dark:text-amber-400 text-sm">{data.error}</p>
+                        <p className="text-slate-500 dark:text-slate-500 text-xs mt-1">Check your Pledge ID and try again</p>
                     </motion.div>
                 )}
 
@@ -161,7 +161,7 @@ export function PledgeTracker() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="py-8 text-center text-slate-500"
+                        className="py-8 text-center text-slate-400 dark:text-slate-500"
                     >
                         <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
                         <p className="text-sm">Enter your Pledge ID to track your donation</p>
