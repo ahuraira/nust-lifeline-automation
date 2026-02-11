@@ -68,12 +68,39 @@ export function useEvents() {
 
 // Track - Pledge tracker (search by ID)
 // Cache: 5 minutes
+// Mock track data for development
+const mockTrackData: TrackResponse = {
+    pledgeId: 'PLEDGE-DEMO-001',
+    currentStatus: 'Hostel Verified',
+    amount: 150000,
+    timeline: [
+        { date: '2026-01-15', status: 'Pledged', note: 'Form submitted via website' },
+        { date: '2026-01-18', status: 'Proof Received', note: 'Bank transfer receipt verified' },
+        { date: '2026-01-20', status: 'Allocated', note: 'Funds assigned to Student (Male - SEECS)' },
+        { date: '2026-01-22', status: 'Hostel Verified', note: 'University confirmed receipt of funds' }
+    ],
+    lastUpdated: new Date().toISOString()
+};
+
 export function useTrack(pledgeId: string | null) {
-    return useQuery<TrackResponse>({
+    const query = useQuery<TrackResponse>({
         queryKey: ['track', pledgeId],
-        queryFn: () => api.get<TrackResponse>('track', { pledgeId: pledgeId! }),
+        queryFn: async () => {
+            // For demo purposes, always return true data for the demo ID if API fails or in dev
+            if (pledgeId === 'PLEDGE-DEMO-001') {
+                return mockTrackData;
+            }
+            return api.get<TrackResponse>('track', { pledgeId: pledgeId! });
+        },
         enabled: !!pledgeId,
         staleTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
+
+    // Fallback for development if API fails
+    if (query.isError && pledgeId === 'PLEDGE-DEMO-001') {
+        return { ...query, data: mockTrackData, error: null, isError: false };
+    }
+
+    return query;
 }

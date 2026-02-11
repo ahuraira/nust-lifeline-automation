@@ -551,18 +551,16 @@ function generateHostelReplyLink(data, templateId) {
  */
 /**
  * Generates a Batch Mailto link using BCC for privacy.
+ * [V59.4] Generates a mailto link for batch allocations with multiple students.
  * Uses a Google Doc Template for the body/subject.
- * @param {Array} donors Array of {email, pledgeId, amount}
- * @param {Object} student {name, cms, school}
- */
-/**
- * Generates a Batch Mailto link using BCC for privacy.
- * Uses a Google Doc Template for the body/subject.
- * @param {Array} donors Array of {email, pledgeId, amount}
- * @param {Object} student {name, cms, school}
+ * @param {Array} donors Array of {email, pledgeId, amount, chapter}
+ * @param {Array|Object} students Single student or array of {name, cms/cmsId, school, allocated}
  * @param {string} batchId The Batch Reference ID (e.g., BATCH-123)
  */
-function generateBatchMailtoLink(donors, student, batchId) {
+function generateBatchMailtoLink(donors, students, batchId) {
+  // Normalize students to array
+  const studentList = Array.isArray(students) ? students : [students];
+
   // 1. Extract Emails for BCC and CC
   const bccEmails = donors.map(d => d.email).join(',');
 
@@ -582,7 +580,7 @@ function generateBatchMailtoLink(donors, student, batchId) {
   // Dedup and Clean
   const uniqueCC = [...new Set(ccEmails)].filter(e => e && e.trim() !== '').join(',');
 
-  // 2. Build the Reference Table for the Body
+  // 2. Build the Reference Table for the Body (donors)
   let refTable = "Contributions Verified:\n";
   let totalAmount = 0;
   donors.forEach(d => {
@@ -590,7 +588,22 @@ function generateBatchMailtoLink(donors, student, batchId) {
     totalAmount += Number(d.amount);
   });
 
-  let subject = `Official Confirmation: Receipt of Funds | Student ID: ${student.cms} (Ref: ${batchId || 'BATCH'})`;
+  // [V59.4] Build text-only studentTable for all students (for watchdog parsing)
+  let studentTableText = "Students Allocated:\n";
+  studentList.forEach(s => {
+    const cmsId = s.cms || s.cmsId || '';
+    const name = s.name || '';
+    const school = s.school || '';
+    const allocated = s.allocated ? `PKR ${Number(s.allocated).toLocaleString()}` : '';
+    studentTableText += `- ${name} | ${cmsId} | ${school}${allocated ? ' | ' + allocated : ''}\n`;
+  });
+
+  // Primary student for subject line (first student)
+  const primaryStudent = studentList[0];
+  const primaryCms = primaryStudent.cms || primaryStudent.cmsId || '';
+  const studentIds = studentList.map(s => s.cms || s.cmsId).join(', ');
+
+  let subject = `Official Confirmation: Receipt of Funds | Student ID: ${primaryCms} (Ref: ${batchId || 'BATCH'})`;
   let body = "";
 
   // 3. Fetch Content from Template (if configured)
@@ -623,19 +636,22 @@ function generateBatchMailtoLink(donors, student, batchId) {
     }
   } else {
     // Hardcoded Fallback
-    body = `Dear NUST Supporters,\n\nOn behalf of NUST, we verify these contributions.\n\nStudent: {{studentName}} (CMS: {{cmsId}})\n\n{{refTable}}`;
+    body = `Dear NUST Supporters,\n\nOn behalf of NUST, we verify these contributions.\n\n{{studentTable}}\n\n{{refTable}}`;
   }
 
   // 4. Replace Placeholders
-  // Supported Placeholders: {{studentName}}, {{cmsId}}, {{school}}, {{refTable}}, {{totalAamount}}, {{batchId}}, {{studentId}}
+  // Supported Placeholders: {{studentName}}, {{cmsId}}, {{school}}, {{refTable}}, {{totalAmount}}, {{batchId}}, {{studentId}}, {{studentIds}}, {{studentTable}}, {{studentCount}}
   const replacements = {
-    studentName: student.name,
-    cmsId: student.cms,
-    studentId: student.cms, // Synonym
-    school: student.school,
+    studentName: studentList.map(s => s.name).join(', '),
+    cmsId: primaryCms,
+    studentId: primaryCms, // Synonym (primary)
+    studentIds: studentIds, // [V59.4] Comma-separated list
+    studentTable: studentTableText, // [V59.4] Text format with all students
+    studentCount: studentList.length.toString(),
+    school: primaryStudent.school || '',
     refTable: refTable,
     totalAamount: totalAmount.toLocaleString(), // [User Request matches typo in Doc?]
-    totalAmount: totalAmount.toLocaleString(), // Correct spelling just in case
+    totalAmount: totalAmount.toLocaleString(), // Correct spelling
     batchId: batchId || 'BATCH-Reference'
   };
 
@@ -647,12 +663,11 @@ function generateBatchMailtoLink(donors, student, batchId) {
   }
 
   const encodedBCC = encodeURIComponent(bccEmails);
-  const encodedCC = encodeURIComponent(uniqueCC); // [NEW] Encoded CC
+  const encodedCC = encodeURIComponent(uniqueCC);
   const encodedSubject = encodeURIComponent(subject);
   const encodedBody = encodeURIComponent(body);
 
   // Note: 'to' field can be left blank or set to the admin email
-  // [FIX] Added &cc=...
   return `mailto:?bcc=${encodedBCC}&cc=${encodedCC}&subject=${encodedSubject}&body=${encodedBody}`;
 }
 

@@ -7,6 +7,108 @@ and this project adheres to loose semantic versioning.
 
 ## [Unreleased]
 
+## [Version 59.4] - 2026-02-09
+### Multi-Student Batch Allocation Enhancement
+- **Enhanced `processBatchAllocation()` in AdminWorkflow.js**
+    - Now accepts multiple students: array of CMS IDs or objects with amounts
+    - Backward compatible: single string CMS ID still works
+    - Three distribution modes:
+        - Explicit amounts: `[{ cmsId: '123', amount: 25000 }]`
+        - Equal distribution: `['123', '456']` (splits available funds equally)
+        - Monthly mode: 25,000 per student
+    - Greedy distribution: fills each student's need from available pledges
+    - Creates one allocation row per pledge-student pair (full auditability)
+    - Sends **ONE consolidated hostel email** with both donorTable and studentTable
+    - `generateBatchMailtoLink()` now includes text-only studentTable for watchdog parsing
+- **Updated `runMonthlySubscriptionBatch()` in Triggers.js**
+    - Removed per-student loop that caused multiple hostel emails
+    - Now calls processBatchAllocation once with all students (25,000 each)
+- **Email Format Improvements**
+    - studentTable now uses matching format as donorTable (Name | CMS ID | School | Allocated)
+    - Template variables: `{{studentCount}}`, `{{studentIds}}`, `{{studentTable}}`
+
+### Subscription Fixes
+- **First Installment Date Fix**
+    - Changed from 1st of next month to **1st of current month** (pledge month)
+    - Ensures first installment aligns with when the pledge is made
+- **Message ID Storage** (proper format using `formatIdForSheet`)
+    - `reminderEmailId` stored in Pledge Installments after reminder sent
+    - `receiptConfirmId` stored in Pledge Installments after payment confirmed
+    - `completionEmailId` stored in Monthly Pledges after subscription completed
+    - `hostelIntimationId` + `hostelIntimationDate` stored in Allocation Log for batch allocations
+
+## [Version 59.3] - 2026-02-09
+### Subscription Downstream Integration (Simplified)
+- **Unified ID Hierarchy**
+    - Eliminated SUB- prefix: Subscription ID = Pledge ID (PLEDGE-YYYY-NNN)
+    - Installment IDs use PLEDGE-ID-MNN format (e.g., PLEDGE-2026-042-M01)
+    - All systems now use single ID format for maximum traceability
+- **Config Updates**
+    - Added `installmentId` (Col 19) to Allocation Log for tracking specific payments
+    - Added email threading columns: `welcomeEmailId`, `completionEmailId` (Monthly Pledges)
+    - Added `reminderEmailId`, `receiptConfirmId` (Pledge Installments)
+- **DonorWorkflow.js Enhancements**
+    - Calculates total pledge amount: monthlyAmount × numStudents × durationMonths
+    - Writes to Response Sheet: pledgeOutstanding, verifiedTotalAmount, balanceAmount
+    - Dashboard consistency maintained with one-time pledges
+- **SubscriptionService.js Improvements**
+    - Uses pledgeId directly as subscriptionId (no SUB- prefix)
+    - FIFO installment matching for payment processing
+    - Updates Response Sheet verified/balance columns on each payment
+    - Stores welcome email ID for threading all subscription communications
+    - Audit trail uses installmentId as targetId for granular tracking
+- **AdminWorkflow.js Fixes**
+    - Subscription detection via Monthly Pledges sheet lookup (not prefix matching)
+    - Unified regex: only matches PLEDGE-YYYY-NNN format
+- **Triggers.js Additions**
+    - New `runMonthlySubscriptionBatch()` for 10th of month allocation
+    - New `sendProcessOwnerStudentAlert()` for missing student assignments
+    - Test function: `test_monthlySubscriptionBatch()`
+- **Audit & Transparency**
+    - All emails thread to welcome email for complete audit trail
+    - installmentId stored in Allocation Log for payment-to-allocation mapping
+    - Full logging via writeLog() and logAuditEvent()
+
+## [Version 59] - 2026-02-08
+### Monthly Pledge Subscription System (Major Feature)
+- **New Capability: Recurring Monthly Donations**
+    - Donors can now pledge monthly amounts (e.g., PKR 50k/month for 6 months)
+    - Supports upfront student linking with contingency change option
+    - Full subscription lifecycle: Active → Overdue → Lapsed → Completed
+- **New File: `SubscriptionService.js`**
+    - Subscription creation with automatic installment pre-generation
+    - Payment recording with installment matching
+    - Reminder system (Day 0 + Day 7 only, no spam)
+    - Dual-mode hostel intimation (individual + batched on 10th)
+    - Student change support with audit logging
+- **Config Updates: `Config.js`**
+    - New sheets: `Monthly Pledges`, `Pledge Installments`
+    - Subscription settings: reminder days, overdue thresholds, hostel intimation mode
+    - New email templates for subscription lifecycle
+    - New form keys for monthly pledge fields
+- **FSM Updates: `StatusConfig.js`**
+    - Added Subscription FSM: Active, Overdue, Paused, Lapsed, Completed, Cancelled
+    - Added Installment FSM: Pending, Reminded, Received, Missed
+- **Workflow Updates: `DonorWorkflow.js`**
+    - Routes "Monthly Recurring" pledges to SubscriptionService
+    - Marks pledges with "(Monthly)" suffix in status
+    - Added `parseMonthlyAmount()` - parses "PKR 25,000" format
+    - Added `parseMonthlyDuration()` - parses "1 Semester (6 Months)" format
+- **Trigger Updates: `Triggers.js`**
+    - New `runDailySubscriptionTasks()` for 9 AM scheduled execution
+    - Handles reminders, overdue checks, and batched hostel intimation
+- **Receipt Processing: `AdminWorkflow.js`**
+    - Updated `processIncomingReceipts` to handle `SUB-` IDs
+    - Automatically routes subscription receipts to `recordSubscriptionPayment()`
+- **Reporting Updates: `ReportingService.js`**
+    - Added `Fact_Subscriptions` and `Fact_Installments` to Data Warehouse
+    - Updated ETL to sync subscription data for Dashboard reporting
+- **New File: `SetupTemplates.js`**
+    - Automated email template generator
+    - Creates all 6 subscription templates with one function
+    - Run `setupAllSubscriptionTemplates()` to generate
+
+
 ## [Version 58] - 2026-02-02
 ### Dashboard
 - **Chart Update:**

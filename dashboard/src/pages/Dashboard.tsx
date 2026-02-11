@@ -11,48 +11,60 @@ import { Users, Wallet, TrendingUp, Heart, AlertCircle } from 'lucide-react';
 
 // Mock data for development (before API is deployed)
 const mockSummary = {
-    impact: { studentsFunded: 28, studentsAwaiting: 15, pledgeCount: 42 },
+    impact: { studentsFunded: 42, studentsAwaiting: 12, pledgeCount: 85 },
     financials: {
-        totalPledged: 2500000,
-        totalVerified: 1800000,
-        totalAllocated: 1400000,
-        balance: 400000,
-        fundingGap: 1200000
+        totalPledged: 9500000,
+        totalVerified: 7200000,
+        totalAllocated: 5800000,
+        balance: 1400000,
+        fundingGap: 2300000 // (Based on ~9.5M need)
     },
     processingDays: {
-        pledgeToReceipt: 4.2,
-        receiptToAllocation: 1.5,
-        allocationToHostel: 3.8
+        pledgeToReceipt: 3.5,
+        receiptToAllocation: 1.2,
+        allocationToHostel: 2.8
     },
     pipeline: {
-        pendingProof: { count: 8, amount: 400000 },
-        proofReceived: { count: 5, amount: 250000 },
-        allocated: { count: 12, amount: 600000 },
-        hostelVerified: { count: 17, amount: 550000 },
+        pendingProof: { count: 15, amount: 850000 },
+        proofReceived: { count: 8, amount: 450000 },
+        allocated: { count: 42, amount: 5800000 },
+        hostelVerified: { count: 38, amount: 5200000 },
     },
-    trends: [],
+    trends: [
+        { week: 'Week 1', pledges: 12, amount: 1200000, verified: 1000000 },
+        { week: 'Week 2', pledges: 18, amount: 1800000, verified: 1500000 },
+        { week: 'Week 3', pledges: 15, amount: 1500000, verified: 1200000 },
+        { week: 'Week 4', pledges: 22, amount: 2200000, verified: 1800000 },
+        { week: 'Week 5', pledges: 28, amount: 2500000, verified: 2100000 },
+        { week: 'Week 6', pledges: 35, amount: 3200000, verified: 2800000 },
+        { week: 'Week 7', pledges: 45, amount: 4500000, verified: 3500000 },
+        { week: 'Week 8', pledges: 85, amount: 9500000, verified: 7200000 },
+    ],
     lastUpdated: new Date().toISOString(),
 };
 
 const mockChapters = {
     data: [
-        { chapter: 'Karachi', pledged: 850000, verified: 720000, count: 15, realizationRate: 85 },
-        { chapter: 'Dubai', pledged: 480000, verified: 480000, count: 8, realizationRate: 100 },
-        { chapter: 'Lahore', pledged: 420000, verified: 350000, count: 10, realizationRate: 83 },
-        { chapter: 'UK', pledged: 380000, verified: 280000, count: 5, realizationRate: 74 },
-        { chapter: 'USA', pledged: 220000, verified: 180000, count: 4, realizationRate: 82 },
+        { chapter: 'Karachi', pledged: 3500000, verified: 2800000, count: 32, realizationRate: 80 },
+        { chapter: 'Islamabad', pledged: 2200000, verified: 1800000, count: 20, realizationRate: 82 },
+        { chapter: 'Lahore', pledged: 1500000, verified: 1100000, count: 12, realizationRate: 73 },
+        { chapter: 'USA (North America)', pledged: 1200000, verified: 900000, count: 5, realizationRate: 75 },
+        { chapter: 'UK', pledged: 600000, verified: 600000, count: 8, realizationRate: 100 },
+        { chapter: 'KSA', pledged: 500000, verified: 0, count: 8, realizationRate: 0 },
     ],
     lastUpdated: new Date().toISOString(),
 };
 
 const mockComposition = {
-    zakat: { amount: 1200000, percent: 48 },
-    general: { amount: 1300000, percent: 52 },
+    zakat: { amount: 5225000, percent: 55 },
+    general: { amount: 4275000, percent: 45 },
     affiliation: [
-        { type: 'NBS', count: 18, amount: 450000, percent: 18 },
-        { type: 'SEECS', count: 12, amount: 900000, percent: 36 },
-        { type: 'SMME', count: 8, amount: 800000, percent: 32 },
-        { type: 'SADA', count: 4, amount: 350000, percent: 14 },
+        { type: 'SEECS', count: 25, amount: 2500000, percent: 26 },
+        { type: 'NBS', count: 20, amount: 2100000, percent: 22 },
+        { type: 'SMME', count: 15, amount: 1800000, percent: 19 },
+        { type: 'SADA', count: 10, amount: 1200000, percent: 13 },
+        { type: 'CEME', count: 8, amount: 1000000, percent: 11 },
+        { type: 'SCME', count: 7, amount: 900000, percent: 9 },
     ],
     lastUpdated: new Date().toISOString(),
 };

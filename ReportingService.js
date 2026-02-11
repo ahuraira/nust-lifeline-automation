@@ -57,7 +57,8 @@ function setupReportingSandbox() {
         'Amount_Remaining', // V8
         'Verified_Total'    // V9
     ]);
-    shPledges.getRange(1, 1, 1, 16).setFontWeight('bold');
+    // [V59] Updated for 19 columns in Monthly Pledges
+    shPledges.getRange(1, 1, 1, 19).setFontWeight('bold');
 
     // 2. Fact_Allocations (Enriched Lifecycle)
     const shAlloc = ss.insertSheet('Fact_Allocations');
@@ -92,6 +93,34 @@ function setupReportingSandbox() {
     ]);
     shStudents.getRange(1, 1, 1, 10).setFontWeight('bold');
 
+    // [V59] 4. Fact_Subscriptions
+    const shSubs = ss.insertSheet('Fact_Subscriptions');
+    shSubs.appendRow([
+        'Subscription_ID',
+        'Pledge_ID',
+        'Monthly_Amount',
+        'Duration_Months',
+        'Start_Date',
+        'Status',
+        'Amount_Received',
+        'Amount_Expected',
+        'Chapter'
+    ]);
+    shSubs.getRange(1, 1, 1, 9).setFontWeight('bold');
+
+    // [V59] 5. Fact_Installments
+    const shInst = ss.insertSheet('Fact_Installments');
+    shInst.appendRow([
+        'Installment_ID',
+        'Subscription_ID',
+        'Month_Num',
+        'Due_Date',
+        'Status',
+        'Amount_Received',
+        'Received_Date'
+    ]);
+    shInst.getRange(1, 1, 1, 7).setFontWeight('bold');
+
     writeLog('SUCCESS', FUNC_NAME, `Created Data Warehouse: ${ss.getUrl()}`);
 }
 
@@ -109,7 +138,7 @@ function syncAnonymousReportingData() {
         return;
     }
 
-    writeLog('INFO', FUNC_NAME, 'Starting ETL Job (Star Schema Sync V8)...');
+    writeLog('INFO', FUNC_NAME, 'Starting ETL Job (Star Schema Sync V59)...');
 
     try {
         // --- STEP 1: EXTRACT (Read All Sources) ---
@@ -120,6 +149,18 @@ function syncAnonymousReportingData() {
         const rawPledges = ssOps.getSheetByName(SHEETS.donations.name).getDataRange().getValues();
         const rawAllocations = ssOps.getSheetByName(SHEETS.allocations.name).getDataRange().getValues();
         const rawStudents = ssConfidential.getSheetByName(SHEETS.students.name).getDataRange().getValues();
+
+        // [V59] Read Subscription Data
+        let rawSubs = [], rawInsts = [];
+        try {
+            const subSheet = ssOps.getSheetByName(SHEETS.monthlyPledges.name);
+            if (subSheet) rawSubs = subSheet.getDataRange().getValues();
+
+            const instSheet = ssOps.getSheetByName(SHEETS.installments.name);
+            if (instSheet) rawInsts = instSheet.getDataRange().getValues();
+        } catch (e) {
+            writeLog('WARN', FUNC_NAME, 'Subscription sheets not found/empty. Skipping sub ETL.');
+        }
 
         // --- STEP 2: PRE-CALCULATION (Allocations Map) ---
         // We need to know Total Allocated per Pledge *before* processing Pledges
@@ -141,6 +182,8 @@ function syncAnonymousReportingData() {
         const pledgesOut = [];
         const allocationsOut = [];
         const studentsOut = [];
+        const subsOut = []; // [V59]
+        const instsOut = []; // [V59]
         const studentHashMap = {}; // Cache to ensure uniqueness
 
         // RECONCILIATION COUNTER (Transform Side)
@@ -231,7 +274,7 @@ function syncAnonymousReportingData() {
             let sHash = studentHashMap[cmsId];
 
             if (!sHash) {
-                writeLog('WARN', FUNC_NAME, `Orphan Alloc: ID ${r[SHEETS.allocations.cols.allocId - 1]}`);
+                // writeLog('WARN', FUNC_NAME, `Orphan Alloc: ID ${r[SHEETS.allocations.cols.allocId - 1]}`);
                 sHash = "UNKNOWN_STUDENT";
             }
 
@@ -258,6 +301,44 @@ function syncAnonymousReportingData() {
             sumAllocationsTransform += amount;
         }
 
+        // [V59] D. Process Subscriptions (Fact Table 3)
+        if (rawSubs.length > 1) {
+            for (let i = 1; i < rawSubs.length; i++) {
+                const r = rawSubs[i];
+                if (!r[0]) continue; // Skip empty rows
+
+                subsOut.push([
+                    r[SHEETS.monthlyPledges.cols.subscriptionId - 1],
+                    r[SHEETS.monthlyPledges.cols.pledgeId - 1],
+                    r[SHEETS.monthlyPledges.cols.monthlyAmount - 1],
+                    r[SHEETS.monthlyPledges.cols.durationMonths - 1],
+                    r[SHEETS.monthlyPledges.cols.startDate - 1],
+                    r[SHEETS.monthlyPledges.cols.status - 1],
+                    r[SHEETS.monthlyPledges.cols.amountReceived - 1],
+                    r[SHEETS.monthlyPledges.cols.amountExpected - 1],
+                    r[SHEETS.monthlyPledges.cols.chapter - 1]
+                ]);
+            }
+        }
+
+        // [V59] E. Process Installments (Fact Table 4)
+        if (rawInsts.length > 1) {
+            for (let i = 1; i < rawInsts.length; i++) {
+                const r = rawInsts[i];
+                if (!r[0]) continue;
+
+                instsOut.push([
+                    r[SHEETS.installments.cols.installmentId - 1],
+                    r[SHEETS.installments.cols.subscriptionId - 1],
+                    r[SHEETS.installments.cols.monthNumber - 1],
+                    r[SHEETS.installments.cols.dueDate - 1],
+                    r[SHEETS.installments.cols.status - 1],
+                    r[SHEETS.installments.cols.amountReceived - 1],
+                    r[SHEETS.installments.cols.receivedDate - 1]
+                ]);
+            }
+        }
+
         // --- STEP 4: FINANCIAL RECONCILIATION ---
         if (Math.abs(sumAllocationsSource - sumAllocationsTransform) > 1) {
             const msg = `FATAL INTEGRITY ERROR: Source Allocations (${sumAllocationsSource}) != Output Allocations (${sumAllocationsTransform})`;
@@ -272,7 +353,25 @@ function syncAnonymousReportingData() {
         batchWrite(ssSandbox.getSheetByName('Fact_Allocations'), allocationsOut);
         batchWrite(ssSandbox.getSheetByName('Dim_Students'), studentsOut);
 
-        writeLog('SUCCESS', FUNC_NAME, `ETL Complete V8. Verified Amount: ${sumAllocationsTransform}`);
+        // [V59] Write new tables (create if missing logic implied or manual setup needed for first run)
+        // Since setupReportingSandbox is one-time, we might need to handle new sheets gracefully
+        let shFactSubs = ssSandbox.getSheetByName('Fact_Subscriptions');
+        if (!shFactSubs) {
+            shFactSubs = ssSandbox.insertSheet('Fact_Subscriptions');
+            shFactSubs.appendRow(['Subscription_ID', 'Pledge_ID', 'Monthly_Amount', 'Duration_Months', 'Start_Date', 'Status', 'Amount_Received', 'Amount_Expected', 'Chapter']);
+            shFactSubs.getRange(1, 1, 1, 9).setFontWeight('bold');
+        }
+        batchWrite(shFactSubs, subsOut);
+
+        let shFactInst = ssSandbox.getSheetByName('Fact_Installments');
+        if (!shFactInst) {
+            shFactInst = ssSandbox.insertSheet('Fact_Installments');
+            shFactInst.appendRow(['Installment_ID', 'Subscription_ID', 'Month_Num', 'Due_Date', 'Status', 'Amount_Received', 'Received_Date']);
+            shFactInst.getRange(1, 1, 1, 7).setFontWeight('bold');
+        }
+        batchWrite(shFactInst, instsOut);
+
+        writeLog('SUCCESS', FUNC_NAME, `ETL Complete V59. Verified Amount: ${sumAllocationsTransform}`);
 
     } catch (e) {
         writeLog('ERROR', FUNC_NAME, `ETL Failed: ${e.toString()}`);

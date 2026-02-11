@@ -1,5 +1,6 @@
 /**
  * Processes a new form submission, updates the sheet, and triggers the confirmation email.
+ * [V59] Now supports Monthly Recurring pledges via SubscriptionService.
  * @param {Object} e The event object passed from the onFormSubmit trigger.
  */
 function processNewPledge(e) {
@@ -23,19 +24,70 @@ function processNewPledge(e) {
   const durationText = getFormValue(e, FORM_KEYS.duration);
   const pledgeAmount = getPledgeAmountFromDuration(durationText);
 
-  // 4. Trigger the confirmation email.
-  sendPledgeConfirmationEmail(donorName, donorEmail, pledgeId, country, pledgeAmount);
+  // --- [V59] Check for Monthly Recurring Pledge ---
+  const pledgeType = getFormValue(e, FORM_KEYS.pledgeType);
 
-  // --- AUDIT TRAIL ---
-  logAuditEvent(
-    'SYSTEM',
-    'NEW_PLEDGE',
-    pledgeId,
-    'New Pledge Form Submission',
-    '',
-    STATUS.pledge.PLEDGED,
-    { donor: donorName, country: country }
-  );
+  // Check if pledge type contains "Monthly Recurring" (handles different option formats)
+  if (pledgeType && pledgeType.includes('Monthly Recurring')) {
+    // This is a subscription - route to SubscriptionService
+    const monthlyAmountRaw = getFormValue(e, FORM_KEYS.monthlyAmount);
+    const monthlyDurationRaw = getFormValue(e, FORM_KEYS.monthlyDuration);
+    const numStudentsRaw = getFormValue(e, FORM_KEYS.numStudents);
+
+    // Parse values (handle different formats)
+    const monthlyAmount = parseMonthlyAmount(monthlyAmountRaw) || 25000;
+    const monthlyDuration = parseMonthlyDuration(monthlyDurationRaw) || 6;
+    const numStudents = parseInt(numStudentsRaw) || 1;
+
+    // [V59.3] Calculate total pledge amount for dashboard consistency
+    const totalMonthlyAmount = monthlyAmount * numStudents; // Per month total
+    const totalPledgeAmount = totalMonthlyAmount * monthlyDuration; // Grand total
+
+    // [V59.3] Write total pledge amount to Response Sheet (same columns as one-time)
+    ws.getRange(row, SHEETS.donations.cols.pledgeOutstanding).setValue(totalPledgeAmount);
+    ws.getRange(row, SHEETS.donations.cols.verifiedTotalAmount).setValue(0);
+    ws.getRange(row, SHEETS.donations.cols.balanceAmount).setValue(0);
+    writeLog('INFO', 'processNewPledge', `Monthly pledge total: PKR ${totalPledgeAmount.toLocaleString()}`, pledgeId);
+
+    // Create the subscription (uses pledgeId as subscriptionId - no SUB- prefix)
+    const subscriptionId = createSubscription(
+      pledgeId, donorEmail, donorName,
+      totalMonthlyAmount, // Monthly amount = per student × num students
+      numStudents, monthlyDuration, country
+    );
+
+    // [V59.3] Use standard PLEDGED status (no Monthly suffix to avoid refactor)
+    ws.getRange(row, SHEETS.donations.cols.status).setValue(STATUS.pledge.PLEDGED);
+
+    logAuditEvent(
+      'SYSTEM',
+      'NEW_PLEDGE',
+      pledgeId,
+      'New Monthly Subscription Created',
+      '',
+      STATUS.pledge.PLEDGED,
+      { donor: donorName, country: country, subscriptionId: subscriptionId, monthlyDuration: monthlyDuration, totalAmount: totalPledgeAmount }
+    );
+
+    writeLog('INFO', 'processNewPledge', `Monthly subscription created: ${subscriptionId}`, pledgeId);
+
+  } else {
+    // Standard one-time pledge flow
+
+    // 4. Trigger the confirmation email.
+    sendPledgeConfirmationEmail(donorName, donorEmail, pledgeId, country, pledgeAmount);
+
+    // --- AUDIT TRAIL ---
+    logAuditEvent(
+      'SYSTEM',
+      'NEW_PLEDGE',
+      pledgeId,
+      'New Pledge Form Submission',
+      '',
+      STATUS.pledge.PLEDGED,
+      { donor: donorName, country: country }
+    );
+  }
 
   // 5. Sync Pledge Data to Tracker
   try {
@@ -44,6 +96,7 @@ function processNewPledge(e) {
     writeLog('WARN', 'processNewPledge', `Failed to sync pledge data: ${e.message}`, pledgeId);
   }
 }
+
 
 
 /**
@@ -139,4 +192,73 @@ function retryFailedConfirmationEmails() {
   }
 
   writeLog('INFO', FUNC_NAME, `Retry Job Complete. Resent ${sentCount} emails.`);
+}
+
+
+// ==================================================================================
+//                      [V59] SUBSCRIPTION FORM PARSING HELPERS
+// ==================================================================================
+
+/**
+ * Parses monthly amount from form response.
+ * Handles formats like "PKR 25,000" or just numbers.
+ * 
+ * @param {string} rawValue The raw form value
+ * @returns {number} The parsed amount in PKR
+ */
+function parseMonthlyAmount(rawValue) {
+  if (!rawValue) return 25000; // Default
+
+  // If already a number
+  if (typeof rawValue === 'number') return rawValue;
+
+  // Convert to string and clean
+  const str = String(rawValue);
+
+  // Extract numbers (handles "PKR 25,000" → 25000)
+  const numbers = str.replace(/[^\d]/g, '');
+  const parsed = parseInt(numbers);
+
+  return parsed > 0 ? parsed : 25000;
+}
+
+/**
+ * Parses duration from form response.
+ * Handles formats like:
+ * - "1 Semester (6 Months)" → 6
+ * - "1 Year (12 Months)" → 12
+ * - "4 Years (48 Months)" → 48
+ * - "6" → 6
+ * 
+ * @param {string} rawValue The raw form value
+ * @returns {number} The duration in months
+ */
+function parseMonthlyDuration(rawValue) {
+  if (!rawValue) return 6; // Default to 1 semester
+
+  // If already a number
+  if (typeof rawValue === 'number') return rawValue;
+
+  const str = String(rawValue).toLowerCase();
+
+  // Try to extract months from parenthesis "(X Months)"
+  const monthsMatch = str.match(/\((\d+)\s*months?\)/i);
+  if (monthsMatch) {
+    return parseInt(monthsMatch[1]);
+  }
+
+  // Try keyword matching
+  if (str.includes('semester') || str.includes('6 month')) {
+    return 6;
+  }
+  if (str.includes('year') && str.includes('4')) {
+    return 48;
+  }
+  if (str.includes('year') || str.includes('12 month')) {
+    return 12;
+  }
+
+  // Try direct number parse
+  const parsed = parseInt(str);
+  return parsed > 0 ? parsed : 6;
 }

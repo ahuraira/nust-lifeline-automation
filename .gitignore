@@ -37,3 +37,6 @@ npm-debug.log*
 
 # === GEMINI===
 GEMINI.md
+
+# === Shell scripts ===
+*.sh

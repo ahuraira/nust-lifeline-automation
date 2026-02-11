@@ -67,16 +67,39 @@ function getPledgeAmountFromDuration(durationText) {
  * @return {number} The remaining balance.
  */
 function getRealTimePledgeBalance(pledgeId, pledgeRowData, spreadsheet = null) {
-    // 1. Get Base Amount: STRICTLY CASH IN BANK (Verified Amount)
-    // SOTA Requirement: "Allocating based on promises is a Leak."
-    // We ignore duration/promise and look only at Verified Total (Col 23, Index 22)
-    // Note: pledgeRowData is an array of values.
+    // [V59.3] SOURCE OF TRUTH: Receipt Log + Allocation Log
+    // Balance = Sum(Receipt Log verified) - Sum(Allocation Log allocated)
+    // This ensures 100% auditability from the actual logs, not cached values.
 
-    const verifiedAmount = Number(pledgeRowData[SHEETS.donations.cols.verifiedTotalAmount - 1]) || 0;
-
-    // 2. Sum all allocations for this Pledge ID
     const ss = spreadsheet || SpreadsheetApp.openById(CONFIG.ssId_operations);
+
+    // 1. Sum verified amounts from Receipt Log
+    const receiptsWs = ss.getSheetByName(SHEETS.receipts.name);
+    if (!receiptsWs) {
+        writeLog('ERROR', 'getRealTimePledgeBalance', `Receipt Log sheet "${SHEETS.receipts.name}" not found!`);
+        return 0; // Fail safe - return 0 balance to prevent allocation
+    }
+    const receiptsData = receiptsWs.getDataRange().getValues();
+    let totalVerified = 0;
+
+    for (let i = 1; i < receiptsData.length; i++) {
+        // Match by Pledge ID (column B)
+        if (String(receiptsData[i][SHEETS.receipts.cols.pledgeId - 1]) === pledgeId) {
+            // Only count VALID receipts
+            const status = receiptsData[i][SHEETS.receipts.cols.status - 1];
+            if (status === 'VALID' || !status) {
+                // Sum verified amount (column G = amountVerified)
+                totalVerified += (Number(receiptsData[i][SHEETS.receipts.cols.amountVerified - 1]) || 0);
+            }
+        }
+    }
+
+    // 2. Sum all allocations from Allocation Log
     const allocWs = ss.getSheetByName(SHEETS.allocations.name);
+    if (!allocWs) {
+        writeLog('ERROR', 'getRealTimePledgeBalance', `Allocation Log sheet "${SHEETS.allocations.name}" not found!`);
+        return 0; // Fail safe
+    }
     const allocData = allocWs.getDataRange().getValues();
     let totalAllocated = 0;
 
@@ -86,7 +109,7 @@ function getRealTimePledgeBalance(pledgeId, pledgeRowData, spreadsheet = null) {
         }
     }
 
-    return verifiedAmount - totalAllocated;
+    return totalVerified - totalAllocated;
 }
 
 /**

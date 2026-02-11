@@ -115,13 +115,25 @@
         <div id="previewArea"></div> <!-- Iframe or Table goes here -->
     </div>
 
-    <!-- 3. STUDENT SELECTOR -->
+    <!-- 3. STUDENT SELECTOR (Multi-Student Support) -->
     <div class="section">
-        <div class="header">Allocate To Student</div>
-        <input list="studentList" id="cmsInput" placeholder="Search CMS ID..." style="width:100%">
+        <div class="header">Allocate To Students</div>
+        <input list="studentList" id="cmsInput" placeholder="Search CMS ID... (press Enter to add)" style="width:100%">
         <datalist id="studentList"></datalist>
-        <div style="font-size:12px; color:#666; margin-top:4px;">
-            Student Need: <span id="studentNeed">--</span>
+
+        <div id="selectedStudents" style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;"></div>
+
+        <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 11px;">
+                <input type="checkbox" id="equalDistribution" checked onchange="toggleDistributionMode()">
+                Equal Distribution
+            </label>
+            <span style="font-size: 10px; color: #666;" id="distributionHint">(splits selected funds equally)</span>
+        </div>
+
+        <div id="studentAmountsSection" style="display: none; margin-top: 8px;">
+            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Specify amount per student:</div>
+            <div id="studentAmountInputs"></div>
         </div>
     </div>
 
@@ -132,6 +144,8 @@
     <script>
         let allPledges = [];
         let selectedPledges = [];
+        let allStudents = [];
+        let selectedStudents = []; // [V59.4] Array of selected students
 
         window.onload = function () {
             google.script.run.withSuccessHandler(initUI).getAvailablePledgesForSidebar();
@@ -139,9 +153,10 @@
 
         function initUI(data) {
             allPledges = data.pledges;
+            allStudents = data.students; // Store for lookup
             renderPledgeList(allPledges);
 
-            // Populate Students
+            // Populate Students Datalist
             const dl = document.getElementById('studentList');
             data.students.forEach(s => {
                 const opt = document.createElement('option');
@@ -149,6 +164,105 @@
                 opt.label = `Need: ${s.need.toLocaleString()}`;
                 dl.appendChild(opt);
             });
+
+            // [V59.4] Listen for Enter key to add student
+            document.getElementById('cmsInput').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addStudent();
+                }
+            });
+        }
+
+        // [V59.4] Add student to selection
+        function addStudent() {
+            const input = document.getElementById('cmsInput');
+            const cmsId = input.value.trim();
+            if (!cmsId) return;
+
+            // Check if already selected
+            if (selectedStudents.find(s => s.cmsId === cmsId)) {
+                input.value = '';
+                return;
+            }
+
+            // Find student data
+            const studentData = allStudents.find(s => s.cmsId === cmsId);
+            if (!studentData) {
+                alert('Student not found: ' + cmsId);
+                return;
+            }
+
+            selectedStudents.push({
+                cmsId: cmsId,
+                need: studentData.need,
+                amount: null // Will be calculated or specified
+            });
+
+            input.value = '';
+            renderSelectedStudents();
+        }
+
+        // [V59.4] Remove student from selection
+        function removeStudent(cmsId) {
+            selectedStudents = selectedStudents.filter(s => s.cmsId !== cmsId);
+            renderSelectedStudents();
+        }
+
+        // [V59.4] Render selected students as chips
+        function renderSelectedStudents() {
+            const container = document.getElementById('selectedStudents');
+            const amountsSection = document.getElementById('studentAmountsSection');
+            const amountsContainer = document.getElementById('studentAmountInputs');
+            const isEqual = document.getElementById('equalDistribution').checked;
+
+            // Render chips
+            container.innerHTML = selectedStudents.map(s => `
+                <span style="background: #e8f0fe; padding: 4px 8px; border-radius: 12px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
+                    ${s.cmsId}
+                    <span style="cursor: pointer; color: #666;" onclick="removeStudent('${s.cmsId}')">&times;</span>
+                </span>
+            `).join('');
+
+            // Render amount inputs if not equal distribution
+            if (!isEqual && selectedStudents.length > 0) {
+                amountsSection.style.display = 'block';
+                amountsContainer.innerHTML = selectedStudents.map(s => `
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <span style="font-size: 11px; width: 80px;">${s.cmsId}:</span>
+                        <input type="number" id="studentAmt_${s.cmsId}" value="${s.amount || ''}" 
+                               placeholder="Amount" style="width: 80px; font-size: 11px;"
+                               onchange="updateStudentAmount('${s.cmsId}')">
+                        <span style="font-size: 10px; color: #666;">Need: ${s.need.toLocaleString()}</span>
+                    </div>
+                `).join('');
+            } else {
+                amountsSection.style.display = 'none';
+            }
+        }
+
+        // [V59.4] Update student amount
+        function updateStudentAmount(cmsId) {
+            const input = document.getElementById(`studentAmt_${cmsId}`);
+            const student = selectedStudents.find(s => s.cmsId === cmsId);
+            if (student && input) {
+                student.amount = Number(input.value) || null;
+            }
+        }
+
+        // [V59.4] Toggle between equal distribution and manual amounts
+        function toggleDistributionMode() {
+            const isEqual = document.getElementById('equalDistribution').checked;
+            const hint = document.getElementById('distributionHint');
+
+            if (isEqual) {
+                hint.innerText = '(splits selected funds equally)';
+                // Clear manual amounts
+                selectedStudents.forEach(s => s.amount = null);
+            } else {
+                hint.innerText = '(specify amount per student)';
+            }
+            renderSelectedStudents();
         }
 
         function renderPledgeList(list) {
@@ -180,27 +294,22 @@
             const amtInput = document.getElementById(`amt_${pId}`);
 
             if (checkbox.checked) {
-                // Add to selection using current input value
                 const currentVal = Number(amtInput.value);
                 const pData = allPledges.find(p => p.id === pId);
-                // Create a copy with the manual amount
                 selectedPledges.push({ ...pData, amount: currentVal });
             } else {
-                // Remove
                 selectedPledges = selectedPledges.filter(p => p.id !== pId);
             }
             renderPreview();
         }
 
         function updateAmount(pId) {
-            // Find if this pledge is currently checked
             const idx = selectedPledges.findIndex(p => p.id === pId);
             if (idx !== -1) {
                 const amtInput = document.getElementById(`amt_${pId}`);
                 let val = Number(amtInput.value);
                 const max = Number(amtInput.getAttribute('max'));
 
-                // Enforce max
                 if (val > max) {
                     val = max;
                     amtInput.value = max;
@@ -211,14 +320,11 @@
             }
         }
 
-        // ... renderPreview remains mostly same but uses p.amount ...
-
         function renderPreview() {
             const area = document.getElementById('previewArea');
             const sec = document.getElementById('previewSection');
             const totalDisplay = document.getElementById('totalSelected');
 
-            // Update Total
             const total = selectedPledges.reduce((sum, p) => sum + p.amount, 0);
             totalDisplay.innerText = total.toLocaleString();
 
@@ -229,13 +335,10 @@
 
             sec.style.display = 'block';
 
-            // DYNAMIC VIEW LOGIC
             if (selectedPledges.length === 1) {
-                // Show Single Iframe
                 const link = selectedPledges[0].proofLink.replace('/view', '/preview');
                 area.innerHTML = `<iframe src="${link}"></iframe>`;
             } else {
-                // Show Table for Multiple
                 let html = `<table class="mini-table"><tr><th>Donor</th><th>Ref</th><th>Alloc</th><th>Receipt</th></tr>`;
                 selectedPledges.forEach(p => {
                     html += `<tr>
@@ -254,14 +357,21 @@
             }
         }
 
+        // [V59.4] Updated to support multiple students
         function runBatchAllocation() {
-            const cmsId = document.getElementById('cmsInput').value;
             const btn = document.getElementById('btnAllocate');
             const msg = document.getElementById('msg');
+            const isEqual = document.getElementById('equalDistribution').checked;
 
-            if (!cmsId || selectedPledges.length === 0) {
+            // Validation
+            if (selectedStudents.length === 0) {
                 msg.style.display = 'block';
-                msg.innerText = "Please select at least one pledge and a student.";
+                msg.innerText = "Please add at least one student.";
+                return;
+            }
+            if (selectedPledges.length === 0) {
+                msg.style.display = 'block';
+                msg.innerText = "Please select at least one pledge.";
                 return;
             }
 
@@ -270,19 +380,35 @@
             btn.innerText = "Processing...";
             msg.style.display = 'none';
 
-            // Send Objects {id, amount} instead of strings
+            // Build pledge payload
             const pledgePayload = selectedPledges.map(p => ({
                 id: p.id,
                 amount: p.amount
             }));
+
+            // [V59.4] Build students payload based on distribution mode
+            let studentPayload;
+            if (isEqual) {
+                // Equal distribution: pass string IDs only
+                studentPayload = selectedStudents.map(s => s.cmsId);
+            } else {
+                // Explicit amounts: pass objects with amounts
+                studentPayload = selectedStudents.map(s => ({
+                    cmsId: s.cmsId,
+                    amount: s.amount || null
+                }));
+            }
 
             google.script.run
                 .withSuccessHandler(() => {
                     btn.innerText = "Success!";
                     msg.style.display = 'block';
                     msg.style.color = 'green';
-                    msg.innerText = "Batch Processed & Email Generated.";
-                    setTimeout(function () { window.onload(); }, 2000); // Reload
+                    msg.innerText = `Batch Processed for ${selectedStudents.length} student(s).`;
+                    // Reset selection
+                    selectedStudents = [];
+                    selectedPledges = [];
+                    setTimeout(function () { window.onload(); }, 2000);
                 })
                 .withFailureHandler((e) => {
                     btn.disabled = false;
@@ -291,7 +417,7 @@
                     msg.style.color = 'red';
                     msg.innerText = e.message;
                 })
-                .processBatchAllocation(pledgePayload, cmsId);
+                .processBatchAllocation(pledgePayload, studentPayload);
         }
     </script>
 </body>

@@ -28,14 +28,25 @@ function processIncomingReceipts() {
     let pledgeId = null;
 
     try {
-      // --- ROBUSTNESS UPGRADE 1: More flexible Pledge ID extraction ---
-      const pledgeIdMatches = subject.match(/PLEDGE-\d{4}-\d+/g); // 'g' flag finds all matches
-      if (!pledgeIdMatches) {
+      // --- [V59.3] Unified ID extraction - only PLEDGE-YYYY-NNN format ---
+      // No more SUB- prefix. Subscription detection via sheet lookup.
+      const idMatches = subject.match(/PLEDGE-\d{4}-\d+/g);
+
+      if (!idMatches) {
         writeLog('WARN', FUNC_NAME, `Could not find any Pledge ID in subject: "${subject}". Skipping.`);
         thread.addLabel(labelProcessed).removeLabel(labelToProcess);
         continue;
       }
-      pledgeId = pledgeIdMatches[pledgeIdMatches.length - 1]; // Always use the last ID found in the subject
+
+      // Always use the last ID found (most specific/recent)
+      const extractedId = idMatches[idMatches.length - 1];
+
+      // [V59.3] Check if this is a subscription by looking up in Monthly Pledges
+      const subWs = SpreadsheetApp.openById(CONFIG.ssId_operations).getSheetByName(SHEETS.monthlyPledges.name);
+      const subRow = findRowByValue(subWs, SHEETS.monthlyPledges.cols.subscriptionId, extractedId);
+      const isSubscription = !!subRow;
+
+      writeLog('INFO', FUNC_NAME, `Found ID: ${extractedId} (Subscription: ${isSubscription})`, extractedId);
 
       // --- CROSS-PROCESSING FIX: Skip Internal/Hostel Emails ---
       // These should be handled by the Watchdog, not the Receipt Processor.
@@ -45,7 +56,7 @@ function processIncomingReceipts() {
       const isInternal = internalEmails.some(email => sender.includes(email.toLowerCase()));
 
       if (isInternal) {
-        writeLog('INFO', FUNC_NAME, `Skipping internal email from ${sender}. Likely a Hostel Reply (Watchdog territory).`, pledgeId);
+        writeLog('INFO', FUNC_NAME, `Skipping internal email from ${sender}. Likely a Hostel Reply (Watchdog territory).`, extractedId);
         // Remove the 'Receipts' label so we don't process it again here.
         // It will be picked up by 'runWatchdog' if it matches the 'Ref:' pattern.
         thread.removeLabel(labelToProcess);
@@ -53,9 +64,75 @@ function processIncomingReceipts() {
       }
       // ----------------------------------------------------------------
 
+      const attachments = message.getAttachments();
+
+      // --- [V59.3] BRANCH: SUBSCRIPTION RECEIPT (detected by sheet lookup) ---
+      if (isSubscription) {
+        writeLog('INFO', FUNC_NAME, `Processing Subscription Receipt for ${extractedId}`);
+
+        // Call SubscriptionService to handle the payment
+        // We pass the FIRST attachment found (assuming it's the receipt)
+        // In a future update, we could add stricter attachment checks
+
+        try {
+          // We use the first attachment or null if none (though receipt usually requires one)
+          const receiptBlob = attachments.length > 0 ? attachments[0] : null;
+
+          if (receiptBlob) {
+            // Save to Drive first (optional, but good practice)
+            // For now, recordSubscriptionPayment handles logic. 
+            // Ideally we pass the file token or ID. 
+            // Let's assume recordSubscriptionPayment helps or we save it here.
+
+            // Actually, recordSubscriptionPayment expects a file ID if we want to link it.
+            // Let's check SubscriptionService.js signature.
+            // It takes (subscriptionId, amount, receiptId, notes, date)
+            // It doesn't upload files itself.
+
+            // So we should save the file here.
+            const folderId = CONFIG.folders.receipts;
+            const folder = DriveApp.getFolderById(folderId);
+            const file = folder.createFile(receiptBlob);
+            file.setName(`${extractedId}_Receipt_${Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd')}`);
+
+            // [V59.3 FIX] Get monthly amount from subscription record
+            // recordSubscriptionPayment signature: (subscriptionId, receiptId, amount)
+            const monthlyAmount = subRow.data[SHEETS.monthlyPledges.cols.monthlyAmount - 1] || 0;
+
+            if (!monthlyAmount || monthlyAmount <= 0) {
+              writeLog('ERROR', FUNC_NAME, `Invalid monthly amount (${monthlyAmount}) for ${extractedId}. Cannot process.`);
+              thread.addLabel(labelProcessed).removeLabel(labelToProcess);
+              continue;
+            }
+
+            // Call with correct signature: (subscriptionId, receiptId, amount)
+            const result = recordSubscriptionPayment(extractedId, file.getId(), monthlyAmount);
+
+            // recordSubscriptionPayment returns boolean, not object
+            if (result) {
+              writeLog('SUCCESS', FUNC_NAME, `Subscription payment recorded for ${extractedId}`);
+              // recordSubscriptionPayment sends the confirmation email internally
+            } else {
+              writeLog('ERROR', FUNC_NAME, `Failed to record subscription payment for ${extractedId}`);
+            }
+          } else {
+            writeLog('WARN', FUNC_NAME, 'No attachment found for subscription receipt.');
+          }
+
+        } catch (e) {
+          writeLog('ERROR', FUNC_NAME, `Error processing subscription receipt: ${e.message}`);
+        }
+
+        // Done with this thread
+        thread.addLabel(labelProcessed).removeLabel(labelToProcess);
+        continue;
+      }
+
+      // --- BRANCH: STANDARD PLEDGE RECEIPT (Existing Logic) ---
+      pledgeId = extractedId; // Set for existing logic below
+
       writeLog('INFO', FUNC_NAME, 'Found Pledge ID. Starting processing.', pledgeId);
 
-      const attachments = message.getAttachments();
       const attachmentNames = attachments.map(a => a.getName());
 
       // --- STRUCTURED EMAIL CONTEXT ---
@@ -86,6 +163,7 @@ function processIncomingReceipts() {
 
       // --- AI ANALYSIS ---
       // Pass pledgeAmount for context
+      const aiStartTime = Date.now();
       const aiResult = analyzeDonorEmail(
         emailContext.formattedForLLM,
         attachments,
@@ -93,11 +171,23 @@ function processIncomingReceipts() {
         message.getDate(),
         pledgeAmount
       );
+      const aiProcessingTime = Date.now() - aiStartTime;
+
+      // [V59.3] Log AI response to AI Audit Log
+      logAIResponse(
+        pledgeId,
+        message.getFrom(),
+        subject,
+        aiResult,
+        aiProcessingTime,
+        [] // Receipt links will be updated after processing
+      );
 
       if (!aiResult) {
         writeLog('WARN', FUNC_NAME, 'AI Processing Failed. Skipping.', pledgeId);
         continue;
       }
+
 
       // --- HANDLE QUESTION ---
       if (aiResult.category === 'QUESTION') {
@@ -126,6 +216,7 @@ function processIncomingReceipts() {
       const driveFolder = DriveApp.getFolderById(CONFIG.folderId_receipts);
       let sessionTotalVerified = 0;
       let lastTransferDate = "Unknown";
+      const savedReceiptLinks = []; // [V59.3] Collect receipt links for AI log
 
       for (const rx of receiptsFound) {
         // 1. Find file
@@ -136,6 +227,7 @@ function processIncomingReceipts() {
         const newFileName = `${pledgeId} - ${rx.filename}`;
         const savedFile = driveFolder.createFile(fileObj.copyBlob()).setName(newFileName);
         const fileUrl = savedFile.getUrl();
+        savedReceiptLinks.push(fileUrl); // [V59.3] Track for AI log
 
         // 3. Log to Sheet
         wsReceipts.appendRow([
@@ -154,6 +246,11 @@ function processIncomingReceipts() {
 
         sessionTotalVerified += (rx.amount || 0);
         if (rx.date) lastTransferDate = rx.date;
+      }
+
+      // [V59.3] Update AI Audit Log with receipt links
+      if (savedReceiptLinks.length > 0) {
+        updateAILogWithReceipts(pledgeId, savedReceiptLinks);
       }
 
       // --- AGGREGATION & STATUS UPDATE ---
@@ -829,205 +926,310 @@ function getVerifiedReceiptsForPledge(pledgeId) {
 }
 
 /**
- * Processes a Batch Allocation.
- * 1. Creates individual Allocation rows.
- * 2. Assigns them a shared BATCH-ID.
- * 3. Sends ONE email to the Hostel.
+ * [V59.4] Processes a Batch Allocation with support for MULTIPLE students.
+ * 
+ * @param {Array} pledgeIds - Array of pledge IDs (strings or {id, amount} objects)
+ * @param {Array|string} students - Array of CMS IDs (strings) or objects {cmsId, amount}
+ *                                  If strings: equal distribution across students
+ *                                  If objects with amount: explicit amounts per student
+ *                                  If single string: backward compatible single student
+ * 
+ * Creates individual Allocation rows (one per pledge-student pair).
+ * Assigns them a shared BATCH-ID.
+ * Sends ONE email to the Hostel with consolidated tables.
  */
-function processBatchAllocation(pledgeIds, cmsId) {
+function processBatchAllocation(pledgeIds, students) {
   const FUNC_NAME = 'processBatchAllocation';
   const lock = LockService.getScriptLock();
-  // tryLock returns boolean, doesn't throw. Check properly.
+
   if (!lock.tryLock(30000)) {
     throw new Error("System busy. Please try again.");
   }
 
   const batchId = `BATCH-${new Date().getTime()}`;
-  // Using robust opener logic instead of getSheet()
   const ssOps = SpreadsheetApp.openById(CONFIG.ssId_operations);
   const allocWs = ssOps.getSheetByName(SHEETS.allocations.name);
   const rawWs = ssOps.getSheetByName(SHEETS.donations.name);
   const studentWs = SpreadsheetApp.openById(CONFIG.ssId_confidential).getSheetByName(SHEETS.students.name);
 
-  // We need to fetch details for the email
-  const donorsForEmail = []; // { name, email, amount, pledgeId }
+  // Tracking for email generation
+  const donorsForEmail = []; // { name, email, amount, pledgeId, chapter, date, receiptFiles }
+  const studentsForEmail = []; // { name, cmsId, school, allocated }
 
   try {
-    // 1. Fetch Student Need (Greedy Cap Logic)
-    // We must know how much the student actually needs to avoid over-allocation.
-    const studentNeed = getRealTimeStudentNeed(cmsId);
-    if (!studentNeed || studentNeed <= 0) throw new Error(`Student ${cmsId} has 0 pending need.`);
+    // ========================================================================
+    // 1. NORMALIZE INPUTS
+    // ========================================================================
 
-    let remainingNeed = studentNeed;
-    let studentDetailsCache = null; // [FIX] Initialize cache for loop
+    // Normalize students to array of objects
+    let studentList = [];
+    if (typeof students === 'string') {
+      // Backward compatible: single CMS ID string
+      studentList = [{ cmsId: students, amount: null }];
+      writeLog('INFO', FUNC_NAME, `Single student mode: ${students}`, batchId);
+    } else if (Array.isArray(students)) {
+      studentList = students.map(s => {
+        if (typeof s === 'string') {
+          return { cmsId: s, amount: null }; // Equal distribution
+        } else if (typeof s === 'object' && s.cmsId) {
+          return { cmsId: s.cmsId, amount: s.amount || null };
+        } else {
+          throw new Error(`Invalid student entry: ${JSON.stringify(s)}`);
+        }
+      });
+      writeLog('INFO', FUNC_NAME, `Multi-student mode: ${studentList.length} students`, batchId);
+    } else {
+      throw new Error('Invalid students parameter. Expected string or array.');
+    }
 
-    // 2. Process Pledges (FIFO / Greedy)
-    for (const pledgeInput of pledgeIds) {
-      if (remainingNeed <= 0 && typeof pledgeInput !== 'object') break; // [STOP] Student is fully funded (Only if auto-allocating)
+    if (studentList.length === 0) throw new Error('No students provided.');
+    if (!pledgeIds || pledgeIds.length === 0) throw new Error('No pledge IDs provided.');
 
-      // Support both string IDs (legacy) and Object {id, amount}
-      let pId, manualAmount = null;
-      if (typeof pledgeInput === 'object') {
-        pId = pledgeInput.id;
-        manualAmount = Number(pledgeInput.amount);
-      } else {
-        pId = pledgeInput;
+    // ========================================================================
+    // 2. FETCH STUDENT DATA AND CALCULATE TARGETS
+    // ========================================================================
+
+    const studentData = []; // { cmsId, name, school, need, target, allocated, row }
+
+    for (const s of studentList) {
+      const sRow = findRowByValue(studentWs, SHEETS.students.cols.cmsId, s.cmsId);
+      if (!sRow) throw new Error(`Student ${s.cmsId} not found.`);
+
+      const need = getRealTimeStudentNeed(s.cmsId);
+      if (!need || need <= 0) {
+        writeLog('WARN', FUNC_NAME, `Student ${s.cmsId} has 0 need. Skipping.`, batchId);
+        continue;
       }
+
+      studentData.push({
+        cmsId: s.cmsId,
+        name: sRow.data[SHEETS.students.cols.name - 1] || 'Unknown',
+        school: sRow.data[SHEETS.students.cols.school - 1] || 'Unknown',
+        need: need,
+        target: s.amount || null, // null = calculate later
+        allocated: 0
+      });
+    }
+
+    if (studentData.length === 0) throw new Error('No students with pending need.');
+
+    // ========================================================================
+    // 3. FETCH PLEDGE BALANCES
+    // ========================================================================
+
+    const pledgeData = []; // { pledgeId, balance, remaining, rowData }
+    let totalAvailable = 0;
+
+    for (const pledgeInput of pledgeIds) {
+      let pId = typeof pledgeInput === 'object' ? pledgeInput.id : pledgeInput;
 
       const rowData = findRowByValue(rawWs, SHEETS.donations.cols.pledgeId, pId);
       if (!rowData) throw new Error(`Pledge ID ${pId} not found.`);
 
-      // Re-calculate balance (Security check)
-      const maxAvailable = getRealTimePledgeBalance(pId, rowData.data);
-      if (maxAvailable <= 0) continue; // Skip exhausted pledges
-
-      // [LOGIC] Determine Allocation Amount
-      let amountToAlloc = 0;
-      if (manualAmount !== null && manualAmount > 0) {
-        // Manual Override: Cap at available balance AND remaining need (User Request)
-        amountToAlloc = Math.min(manualAmount, maxAvailable, remainingNeed);
-      } else {
-        // Auto (Greedy): Allocate what is available up to remaining need
-        if (remainingNeed <= 0) continue;
-        amountToAlloc = Math.min(maxAvailable, remainingNeed);
+      const balance = getRealTimePledgeBalance(pId, rowData.data);
+      if (balance <= 0) {
+        writeLog('WARN', FUNC_NAME, `Pledge ${pId} has 0 balance. Skipping.`, batchId);
+        continue;
       }
 
-      // Get Verified Amount for Logging (User Request)
-      const totalVerified = Number(rowData.data[SHEETS.donations.cols.verifiedTotalAmount - 1]) || 0;
-
-      // Create Allocation Record
-      const allocId = `ALLOC-${Math.floor(Math.random() * 1000000)}`;
-
-      // --- [NEW] SEND INTERMEDIATE DONOR NOTIFICATION ---
-      let donorAllocMsgId = '';
-      try {
-        const dEmail = rowData.data[SHEETS.donations.cols.donorEmail - 1];
-        const dName = rowData.data[SHEETS.donations.cols.donorName - 1];
-
-        // Threading Context
-        const receiptMsgId = rowData.data[SHEETS.donations.cols.receiptMessageId - 1];
-        const pledgeMsgId = rowData.data[SHEETS.donations.cols.pledgeEmailId - 1];
-        const priorIds = [receiptMsgId, pledgeMsgId];
-
-        if (dEmail && TEMPLATES.donorAllocationNotification && TEMPLATES.donorAllocationNotification.includes('ENTER') === false) {
-          const dData = {
-            donorName: dName,
-            studentId: cmsId,
-            amount: amountToAlloc.toLocaleString(),
-            pledgeId: pId,
-            allocationId: allocId,
-            studentName: '', // Fetched later
-            chapter: rowData.data[SHEETS.donations.cols.cityCountry - 1] // [NEW] Added Chapter
-          };
-
-          // QUICK FIX: Fetch student details lightly if missing (or move fetching up)
-          // Moving fetching up is cleaner but touches more code. 
-          // I will add a lightweight lookup here or just pass basic details.
-          // Actually, let's fetch the Student Name right now for the email.
-          if (!studentDetailsCache) {
-            const sRow = findRowByValue(studentWs, SHEETS.students.cols.cmsId, cmsId);
-            if (sRow) studentDetailsCache = {
-              name: sRow.data[SHEETS.students.cols.name - 1],
-              school: sRow.data[SHEETS.students.cols.school - 1]
-            };
-          }
-          if (studentDetailsCache) {
-            dData.studentName = studentDetailsCache.name;
-            dData.school = studentDetailsCache.school;
-          }
-
-          const content = createEmailFromTemplate(TEMPLATES.donorAllocationNotification, dData);
-          donorAllocMsgId = sendOrReply(dEmail, content.subject, content.htmlBody, {
-            from: EMAILS.processOwner,
-            cc: getCCString(rowData.data[SHEETS.donations.cols.cityCountry - 1]) // CC Chapter Lead
-          }, priorIds);
-        }
-      } catch (err) {
-        console.warn(`Batch: Failed to notify donor ${pId}: ${err.message}`);
-      }
-
-      // --- [NEW] PREPARE DATA FOR BATCH EMAIL & ATTACHMENTS ---
-      // Fetch Receipt Details using Robust Helper (Standardized)
-      let dbDate = '';
-      let receiptFiles = [];
-      try {
-        const receiptData = getVerifiedReceiptsForPledge(pId);
-        receiptFiles = receiptData.files || [];
-        dbDate = receiptData.dates.join(', ');
-
-        // Fallback Date if helper returned none
-        if (!dbDate || dbDate === '') dbDate = rowData.data[SHEETS.donations.cols.actualTransferDate - 1];
-      } catch (e) {
-        console.warn("Batch: Failed to fetch receipt details for " + pId + ": " + e.message);
-      }
-
-      // Store extended data
-      donorsForEmail.push({
+      pledgeData.push({
         pledgeId: pId,
-        amount: amountToAlloc,
-        verifiedAmount: totalVerified,
-        name: rowData.data[SHEETS.donations.cols.donorName - 1],
-        email: rowData.data[SHEETS.donations.cols.donorEmail - 1],
-        chapter: rowData.data[SHEETS.donations.cols.cityCountry - 1],
-        date: dbDate ? Utilities.formatDate(new Date(dbDate), Session.getScriptTimeZone(), "dd-MMM-yyyy") : 'N/A',
-        receiptFiles: receiptFiles // [NEW] List of File Objects (Array)
+        balance: balance,
+        remaining: balance,
+        rowData: rowData
       });
-
-      // Write to Allocation Log
-      // Columns: [AllocID, CMS, Pledge, VERIFIED_AMT, Alloc_Amount, Date, Status, 
-      //           IntimID, IntimDate, DonorAllocID, DonorAllocDate ...]
-      const newRow = [
-        allocId, cmsId, pId,
-        totalVerified,
-        amountToAlloc,
-        new Date(),
-        STATUS.allocation.PENDING_HOSTEL,
-        '', '',
-        formatIdForSheet(donorAllocMsgId), new Date(), // [FIX] Log the Notification
-        '', '',
-        '', '',
-        '', '',
-        batchId
-      ];
-      allocWs.appendRow(newRow);
-
-      // Update Raw Sheet Status
-      // If we used up everything, it's FULLY_ALLOCATED. Else PARTIAL.
-      const newBalance = maxAvailable - amountToAlloc;
-      const newStatus = (newBalance <= 0) ? STATUS.pledge.FULLY_ALLOCATED : STATUS.pledge.PARTIALLY_ALLOCATED;
-
-      rawWs.getRange(rowData.row, SHEETS.donations.cols.status).setValue(newStatus);
-
-      // Decrement Need
-      remainingNeed -= amountToAlloc;
+      totalAvailable += balance;
     }
 
-    if (donorsForEmail.length === 0) {
-      throw new Error("No funds could be allocated (Surplus or Error).");
+    if (pledgeData.length === 0) throw new Error('No pledges with available balance.');
+    writeLog('INFO', FUNC_NAME, `Total available from ${pledgeData.length} pledges: ${totalAvailable}`, batchId);
+
+    // ========================================================================
+    // 4. CALCULATE TARGET AMOUNTS (if not explicit)
+    // ========================================================================
+
+    const hasExplicitAmounts = studentData.some(s => s.target !== null);
+
+    if (!hasExplicitAmounts) {
+      // Equal distribution: divide available funds equally (capped by individual need)
+      const equalShare = Math.floor(totalAvailable / studentData.length);
+      studentData.forEach(s => {
+        s.target = Math.min(equalShare, s.need);
+      });
+      writeLog('INFO', FUNC_NAME, `Equal distribution: ${equalShare} per student`, batchId);
+    } else {
+      // Use explicit amounts but validate against need
+      studentData.forEach(s => {
+        if (s.target === null) {
+          // Mixed mode: no amount specified for this student, use their need
+          s.target = s.need;
+        }
+        s.target = Math.min(s.target, s.need); // Cap at need
+      });
+      writeLog('INFO', FUNC_NAME, 'Using explicit amounts per student', batchId);
     }
 
-    // 3. Generate Batch Mailto
-    const studentRow = findRowByValue(studentWs, SHEETS.students.cols.cmsId, cmsId);
-    // Student might not be found if need was calculated but row check fails (unlikely)
+    // ========================================================================
+    // 5. GREEDY DISTRIBUTION: Allocate pledges to students
+    // ========================================================================
 
-    const studentDetails = {
-      name: studentRow.data[SHEETS.students.cols.name - 1],
-      cms: cmsId,
-      school: studentRow.data[SHEETS.students.cols.school - 1]
-    };
+    const allocationRows = []; // For batch writing to Allocation Log
 
-    const mailtoLink = generateBatchMailtoLink(donorsForEmail, studentDetails, batchId);
+    for (const student of studentData) {
+      let neededForStudent = student.target - student.allocated;
+      if (neededForStudent <= 0) continue;
 
-    // 4. PREPARE EMAIL CONTENT (HTML TABLE + ATTACHMENTS)
+      writeLog('INFO', FUNC_NAME, `Processing ${student.cmsId}: target=${student.target}`, batchId);
 
-    // --- [NEW] GENERATE HTML TABLE (ROBUST FORMATTING) ---
-    // User requested to fix text overlapping. Reverting to standard safe CSS.
+      for (const pledge of pledgeData) {
+        if (neededForStudent <= 0) break;
+        if (pledge.remaining <= 0) continue;
 
-    // Simple, robust table styles
+        const amountToAlloc = Math.min(pledge.remaining, neededForStudent);
+
+        // Get verified amount for logging
+        const totalVerified = Number(pledge.rowData.data[SHEETS.donations.cols.verifiedTotalAmount - 1]) || 0;
+
+        // Create allocation ID
+        const allocId = `ALLOC-${Math.floor(Math.random() * 1000000)}`;
+
+        // --- DONOR NOTIFICATION (per allocation) ---
+        let donorAllocMsgId = '';
+        try {
+          const dEmail = pledge.rowData.data[SHEETS.donations.cols.donorEmail - 1];
+          const dName = pledge.rowData.data[SHEETS.donations.cols.donorName - 1];
+
+          if (dEmail && TEMPLATES.donorAllocationNotification &&
+            !TEMPLATES.donorAllocationNotification.includes('ENTER')) {
+            const receiptMsgId = pledge.rowData.data[SHEETS.donations.cols.receiptMessageId - 1];
+            const pledgeMsgId = pledge.rowData.data[SHEETS.donations.cols.pledgeEmailId - 1];
+
+            const dData = {
+              donorName: dName,
+              studentId: student.cmsId,
+              cmsId: student.cmsId,
+              amount: amountToAlloc.toLocaleString(),
+              pledgeId: pledge.pledgeId,
+              allocationId: allocId,
+              studentName: student.name,
+              school: student.school,
+              chapter: pledge.rowData.data[SHEETS.donations.cols.cityCountry - 1]
+            };
+
+            const content = createEmailFromTemplate(TEMPLATES.donorAllocationNotification, dData);
+            donorAllocMsgId = sendOrReply(dEmail, content.subject, content.htmlBody, {
+              from: EMAILS.processOwner,
+              cc: getCCString(pledge.rowData.data[SHEETS.donations.cols.cityCountry - 1])
+            }, [receiptMsgId, pledgeMsgId]);
+          }
+        } catch (err) {
+          writeLog('WARN', FUNC_NAME, `Failed to notify donor ${pledge.pledgeId}: ${err.message}`, batchId);
+        }
+
+        // --- Fetch Receipt Files forEmail ---
+        let receiptFiles = [];
+        let dbDate = '';
+        try {
+          const receiptData = getVerifiedReceiptsForPledge(pledge.pledgeId);
+          receiptFiles = receiptData.files || [];
+          dbDate = receiptData.dates.join(', ') || pledge.rowData.data[SHEETS.donations.cols.actualTransferDate - 1];
+        } catch (e) {
+          writeLog('WARN', FUNC_NAME, `Failed to fetch receipts for ${pledge.pledgeId}: ${e.message}`, batchId);
+        }
+
+        // --- Track for email ---
+        // Check if this pledge already added (may appear multiple times if funding multiple students)
+        const existingDonor = donorsForEmail.find(d => d.pledgeId === pledge.pledgeId);
+        if (existingDonor) {
+          existingDonor.amount += amountToAlloc; // Aggregate
+        } else {
+          donorsForEmail.push({
+            pledgeId: pledge.pledgeId,
+            amount: amountToAlloc,
+            verifiedAmount: totalVerified,
+            name: pledge.rowData.data[SHEETS.donations.cols.donorName - 1],
+            email: pledge.rowData.data[SHEETS.donations.cols.donorEmail - 1],
+            chapter: pledge.rowData.data[SHEETS.donations.cols.cityCountry - 1],
+            date: dbDate ? Utilities.formatDate(new Date(dbDate), Session.getScriptTimeZone(), "dd-MMM-yyyy") : 'N/A',
+            receiptFiles: receiptFiles
+          });
+        }
+
+        // --- Prepare Allocation Row ---
+        const newRow = [
+          allocId, student.cmsId, pledge.pledgeId,
+          totalVerified,
+          amountToAlloc,
+          new Date(),
+          STATUS.allocation.PENDING_HOSTEL,
+          '', '',
+          formatIdForSheet(donorAllocMsgId), new Date(),
+          '', '',
+          '', '',
+          '', '',
+          batchId
+        ];
+        allocationRows.push(newRow);
+
+        // Update tracking
+        student.allocated += amountToAlloc;
+        pledge.remaining -= amountToAlloc;
+        neededForStudent -= amountToAlloc;
+
+        writeLog('INFO', FUNC_NAME,
+          `Allocated ${amountToAlloc} from ${pledge.pledgeId} to ${student.cmsId}`, batchId);
+      }
+
+      // Check if student was fully or partially funded
+      if (student.allocated < student.target) {
+        writeLog('WARN', FUNC_NAME,
+          `Student ${student.cmsId} partially funded: ${student.allocated}/${student.target}`, batchId);
+      }
+
+      // Add to students for email
+      studentsForEmail.push({
+        name: student.name,
+        cmsId: student.cmsId,
+        school: student.school,
+        allocated: student.allocated
+      });
+    }
+
+    if (allocationRows.length === 0) {
+      throw new Error("No allocations could be made (insufficient funds or invalid data).");
+    }
+
+    // ========================================================================
+    // 6. WRITE ALL ALLOCATION ROWS TO LOG
+    // ========================================================================
+
+    allocationRows.forEach(row => allocWs.appendRow(row));
+    writeLog('INFO', FUNC_NAME, `Written ${allocationRows.length} allocation rows`, batchId);
+
+    // ========================================================================
+    // 7. UPDATE PLEDGE STATUSES
+    // ========================================================================
+
+    for (const pledge of pledgeData) {
+      const usedAmount = pledge.balance - pledge.remaining;
+      if (usedAmount > 0) {
+        const newStatus = pledge.remaining <= 0
+          ? STATUS.pledge.FULLY_ALLOCATED
+          : STATUS.pledge.PARTIALLY_ALLOCATED;
+        rawWs.getRange(pledge.rowData.row, SHEETS.donations.cols.status).setValue(newStatus);
+      }
+    }
+
+    // ========================================================================
+    // 8. BUILD EMAIL CONTENT
+    // ========================================================================
+
+    // Shared table styling
     const styleTable = 'width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; font-family: Arial, sans-serif; font-size: 10pt;';
     const styleTh = 'border: 1px solid #ddd; padding: 8px; background-color: #f2f2f2; text-align: left; font-weight: bold; min-width: 80px;';
     const styleTd = 'border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; word-wrap: break-word;';
 
+    // --- Donor Table ---
     let donorTableHtml = `<table style="${styleTable}">
         <thead>
             <tr>
@@ -1050,13 +1252,33 @@ function processBatchAllocation(pledgeIds, cmsId) {
                 <td style="${styleTd}">PKR ${Number(d.amount).toLocaleString()}</td>
             </tr>`;
     });
-
     donorTableHtml += `</tbody></table>`;
 
-    // Fallback if empty (should not happen)
-    if (donorsForEmail.length === 0) donorTableHtml = '<p>No donors found.</p>';
+    // --- Student Table (MATCHING FORMAT) ---
+    let studentTableHtml = `<table style="${styleTable}">
+        <thead>
+            <tr>
+                <th style="${styleTh}">Name</th>
+                <th style="${styleTh}">CMS ID</th>
+                <th style="${styleTh}">School</th>
+                <th style="${styleTh}">Allocated</th>
+            </tr>
+        </thead>
+        <tbody>`;
 
-    // B. Collect Attachments
+    const totalAllocated = studentsForEmail.reduce((sum, s) => sum + s.allocated, 0);
+    studentsForEmail.forEach(s => {
+      studentTableHtml += `
+            <tr>
+                <td style="${styleTd}">${s.name}</td>
+                <td style="${styleTd}">${s.cmsId}</td>
+                <td style="${styleTd}">${s.school}</td>
+                <td style="${styleTd}">PKR ${Number(s.allocated).toLocaleString()}</td>
+            </tr>`;
+    });
+    studentTableHtml += `</tbody></table>`;
+
+    // --- Collect Attachments ---
     const emailAttachments = [];
     let currentSize = 0;
     const MAX_EMAIL_SIZE = 24 * 1024 * 1024;
@@ -1065,83 +1287,195 @@ function processBatchAllocation(pledgeIds, cmsId) {
       if (d.receiptFiles && d.receiptFiles.length > 0) {
         d.receiptFiles.forEach(blob => {
           try {
-            // receiptFiles contains Blobs (from getVerifiedReceiptsForPledge)
-            // d.receiptFiles.forEach(blob => ...)
             if ((currentSize + blob.getBytes().length) < MAX_EMAIL_SIZE) {
               emailAttachments.push(blob);
               currentSize += blob.getBytes().length;
             }
           } catch (err) {
-            console.warn("Batch: Failed to attach file for " + d.pledgeId + ": " + err.message);
+            writeLog('WARN', FUNC_NAME, `Failed to attach file: ${err.message}`, batchId);
           }
         });
       }
     });
 
-    // C. Send Email to Hostel
+    // --- Generate Mailto Link with all students ---
+    // [V59.4] Pass all students for text-only studentTable in mailto body
+    const mailtoLink = generateBatchMailtoLink(donorsForEmail, studentsForEmail, batchId);
+
+    // --- Build Final Email ---
     let emailBody = "";
     let emailSubject = `Batch Request ${batchId}`;
 
     if (TEMPLATES.batchIntimationToHostel) {
       const templateData = {
         batchId: batchId,
-        studentName: studentDetails.name,
-        studentId: studentDetails.cms, // [NEW] Added
-        receiptCount: emailAttachments.length.toString(), // [NEW] Added
-        donorTable: donorTableHtml, // [NEW] Injected HTML
-        totalAmount: (studentNeed - remainingNeed).toLocaleString(),
-        mailtoLink: mailtoLink, // [FIX] Renamed property to trigger replacement
-        cmsId: studentDetails.cms,
-        school: studentDetails.school
+        studentName: studentsForEmail.map(s => s.name).join(', '),
+        studentId: studentsForEmail.map(s => s.cmsId).join(', '),
+        cmsId: studentsForEmail.map(s => s.cmsId).join(', '),
+        studentIds: studentsForEmail.map(s => s.cmsId).join(', '),
+        studentTable: studentTableHtml,
+        receiptCount: emailAttachments.length.toString(),
+        donorTable: donorTableHtml,
+        totalAmount: totalAllocated.toLocaleString(),
+        mailtoLink: mailtoLink,
+        school: studentsForEmail.map(s => s.school).join(', '),
+        studentCount: studentsForEmail.length.toString()
       };
       const templateResult = createEmailFromTemplate(TEMPLATES.batchIntimationToHostel, templateData);
       emailBody = templateResult.htmlBody;
       emailSubject = templateResult.subject;
     } else {
-      // Fallback if no template configured
+      // Fallback
       emailBody = `
             <h2>Batch Allocation Request</h2>
             <p><strong>Batch Ref:</strong> ${batchId}</p>
-            <p>Please verify funds for student: <strong>${studentDetails.name}</strong></p>
+            <h3>Donors</h3>
             ${donorTableHtml}
+            <h3>Students</h3>
+            ${studentTableHtml}
+            <p><strong>Total Allocated:</strong> PKR ${totalAllocated.toLocaleString()}</p>
             <p><a href="${mailtoLink}">CLICK HERE TO CONFIRM BATCH (BCC DONORS)</a></p>
         `;
     }
 
-    // [FIX] Aggregate CCs (AlwaysCC + Chapter Leads from this batch)
+    // --- Aggregate CCs ---
     let ccEmails = [];
     if (EMAILS.alwaysCC) {
       ccEmails = ccEmails.concat(Array.isArray(EMAILS.alwaysCC) ? EMAILS.alwaysCC : [EMAILS.alwaysCC]);
     }
-
-    // Get unique chapters from donors in this batch
     const distinctChapters = [...new Set(donorsForEmail.map(d => d.chapter))];
     distinctChapters.forEach(chapter => {
       const safeChapter = chapter || 'Other';
-      // Access MAPPINGS safely (Config might be loaded via global context)
       const leads = MAPPINGS.chapterLeads[safeChapter] || MAPPINGS.chapterLeads['Other'] || [];
       ccEmails = ccEmails.concat(Array.isArray(leads) ? leads : [leads]);
     });
-
-    // Dedup
     const finalCC = [...new Set(ccEmails)].filter(e => e && e.trim() !== '').join(',');
 
-    GmailApp.sendEmail(EMAILS.ddHostels, emailSubject, '', {
-      htmlBody: emailBody,
+    // ========================================================================
+    // 9. SEND ONE CONSOLIDATED EMAIL & STORE MESSAGE ID
+    // ========================================================================
+
+    const hostelMsgId = sendEmailAndGetId(EMAILS.ddHostels, emailSubject, emailBody, {
       cc: finalCC,
-      attachments: emailAttachments // [NEW] Attach proofs
+      attachments: emailAttachments
     });
 
-    writeLog('SUCCESS', FUNC_NAME, `Batch ${batchId} processed. Allocated: ${(studentNeed - remainingNeed)}.`);
+    // [V59.4] Store hostel intimation ID in ALL allocation rows for this batch
+    if (hostelMsgId && allocationRows.length > 0) {
+      const formattedMsgId = formatIdForSheet(hostelMsgId);
+      const now = new Date();
+
+      // Find all allocation rows with this batchId (they were just appended)
+      const allocData = allocWs.getDataRange().getValues();
+      for (let i = allocData.length - 1; i >= 1; i--) {
+        if (allocData[i][SHEETS.allocations.cols.batchId - 1] === batchId) {
+          allocWs.getRange(i + 1, SHEETS.allocations.cols.hostelIntimationId).setValue(formattedMsgId);
+          allocWs.getRange(i + 1, SHEETS.allocations.cols.hostelIntimationDate).setValue(now);
+        }
+      }
+      writeLog('INFO', FUNC_NAME, `Stored hostel intimation ID for batch ${batchId}`, batchId);
+    }
+
+    writeLog('SUCCESS', FUNC_NAME,
+      `Batch ${batchId} processed. ${studentsForEmail.length} students, ${allocationRows.length} allocations, Total: ${totalAllocated}`, batchId);
 
     // Sync
     syncStudentData();
     syncPledgeData();
 
   } catch (e) {
-    writeLog('ERROR', FUNC_NAME, e.message);
+    writeLog('ERROR', FUNC_NAME, e.message, batchId);
     throw e;
   } finally {
     lock.releaseLock();
+  }
+}
+
+// ==================================================================================
+//                      [V59.3] AI AUDIT LOGGING
+// ==================================================================================
+
+/**
+ * Logs AI analysis response to the AI Audit Log sheet.
+ * Provides full audit trail for all AI decisions.
+ * 
+ * @param {string} pledgeId - The pledge ID being processed
+ * @param {string} sender - Email sender address
+ * @param {string} subject - Email subject line
+ * @param {Object|null} aiResult - The AI analysis result object
+ * @param {number} processingTime - Time taken for AI call (ms)
+ * @param {Array<string>} receiptLinks - Array of Drive URLs to receipt files
+ */
+function logAIResponse(pledgeId, sender, subject, aiResult, processingTime, receiptLinks) {
+  const FUNC_NAME = 'logAIResponse';
+
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.ssId_operations);
+    const aiLogWs = ss.getSheetByName(SHEETS.aiAuditLog.name);
+
+    if (!aiLogWs) {
+      writeLog('WARN', FUNC_NAME, 'AI Audit Log sheet not found. Skipping AI logging.');
+      return;
+    }
+
+    // Calculate totals from AI result
+    const receiptsFound = aiResult?.valid_receipts || [];
+    const totalAmount = receiptsFound.reduce((sum, r) => sum + (r.amount || 0), 0);
+    const avgConfidence = receiptsFound.length > 0
+      ? receiptsFound.reduce((sum, r) => sum + (r.confidence || r.confidence_score || 0), 0) / receiptsFound.length
+      : 0;
+
+    const logRow = [
+      new Date(),                                    // A: timestamp
+      pledgeId,                                      // B: pledgeId
+      sender,                                        // C: sender
+      subject.substring(0, 200),                     // D: subject (truncate)
+      aiResult?.category || 'ERROR',                 // E: category
+      (aiResult?.summary || 'AI processing failed').substring(0, 500), // F: summary
+      receiptsFound.length,                          // G: receiptsFound
+      totalAmount,                                   // H: totalAmount
+      avgConfidence,                                 // I: confidence
+      receiptLinks.join('\n'),                       // J: receiptLinks
+      JSON.stringify(aiResult || { error: 'null' }).substring(0, 5000), // K: rawResponse
+      processingTime,                                // L: processingTime (ms)
+      aiResult ? 'TRUE' : 'FALSE'                    // M: success
+    ];
+
+    aiLogWs.appendRow(logRow);
+    writeLog('INFO', FUNC_NAME, `AI response logged for ${pledgeId}`, pledgeId);
+
+  } catch (e) {
+    // Don't fail the main process if logging fails
+    writeLog('WARN', FUNC_NAME, `Failed to log AI response: ${e.message}`, pledgeId);
+  }
+}
+
+/**
+ * Updates AI Audit Log with receipt links after files are saved.
+ * Called from processIncomingReceipts after saving receipt files.
+ * 
+ * @param {string} pledgeId - The pledge ID
+ * @param {Array<string>} receiptLinks - Array of Drive URLs  
+ */
+function updateAILogWithReceipts(pledgeId, receiptLinks) {
+  const FUNC_NAME = 'updateAILogWithReceipts';
+
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.ssId_operations);
+    const aiLogWs = ss.getSheetByName(SHEETS.aiAuditLog.name);
+
+    if (!aiLogWs) return;
+
+    // Find the most recent log entry for this pledgeId
+    const data = aiLogWs.getDataRange().getValues();
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][SHEETS.aiAuditLog.cols.pledgeId - 1] === pledgeId) {
+        aiLogWs.getRange(i + 1, SHEETS.aiAuditLog.cols.receiptLinks).setValue(receiptLinks.join('\n'));
+        writeLog('INFO', FUNC_NAME, `Updated AI log with ${receiptLinks.length} receipt links`, pledgeId);
+        return;
+      }
+    }
+  } catch (e) {
+    writeLog('WARN', FUNC_NAME, `Failed to update AI log: ${e.message}`, pledgeId);
   }
 }

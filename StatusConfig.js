@@ -92,6 +92,54 @@ const STATUS_WORKFLOW = {
             next: ['ARCHIVED'],
             label: 'Settled'
         }
+    },
+
+    // --- [V59] Subscription FSM ---
+    SUBSCRIPTION: {
+        'Active': {
+            next: ['Overdue', 'Paused', 'Completed'],
+            label: 'Active'
+        },
+        'Overdue': {
+            next: ['Active', 'Lapsed', 'Paused'],
+            label: 'Overdue'
+        },
+        'Paused': {
+            next: ['Active', 'Cancelled'],
+            label: 'Paused'
+        },
+        'Lapsed': {
+            next: ['Active', 'Cancelled'],
+            label: 'Lapsed'
+        },
+        'Completed': {
+            next: [],
+            label: 'Completed'
+        },
+        'Cancelled': {
+            next: [],
+            label: 'Cancelled'
+        }
+    },
+
+    // --- [V59] Installment FSM ---
+    INSTALLMENT: {
+        'Pending': {
+            next: ['Reminded', 'Received'],
+            label: 'Pending'
+        },
+        'Reminded': {
+            next: ['Reminded', 'Received', 'Missed'],
+            label: 'Reminded'
+        },
+        'Received': {
+            next: [],
+            label: 'Received'
+        },
+        'Missed': {
+            next: ['Received'],
+            label: 'Missed'
+        }
     }
 };
 
@@ -124,8 +172,26 @@ const STATUS = {
         FULLY_FUNDED: '3 - Fully Funded',
         SETTLED: '4 - Settled'
     },
+    // --- [V59] Subscription Status Constants ---
+    subscription: {
+        ACTIVE: 'Active',
+        OVERDUE: 'Overdue',
+        PAUSED: 'Paused',
+        LAPSED: 'Lapsed',
+        COMPLETED: 'Completed',
+        CANCELLED: 'Cancelled'
+    },
+    // --- [V59] Installment Status Constants ---
+    installment: {
+        PENDING: 'Pending',
+        REMINDED: 'Reminded',
+        RECEIVED: 'Received',
+        ALLOCATED: 'Allocated', // [V59.3] Added for batch allocation tracking
+        MISSED: 'Missed'
+    },
     // Legacy/UI-specific status values (used for dropdown triggers in Donations Tracker)
     donations: {
         toBeAllocated: 'Allocate the selected student' // Dropdown value that triggers allocation
     }
 };
+

@@ -15,19 +15,19 @@
 
 const CONFIG = {
   // --- File IDs ---
-  ssId_operations: '1o1myu2ADAdfs-CEQBpd1CkILpP7tX5surOg3Fw1Xebw',       // For "[OPERATIONS] Hostel Fund Tracker"
-  ssId_confidential: '1eGAsIbeEeFjikmJI2JtCuQexVrotbzWQK1b2IhnBt5Y', // For "[CONFIDENTIAL] Student Database"
+  ssId_operations: '1V8pQ7l7Rz0I2PTyQIHUCVnqI8qNyr_gQVPF1rEg3w6s',       // For "[OPERATIONS] Hostel Fund Tracker"
+  ssId_confidential: '1FBmrmAuS5eddtkbILpKkmwoms1jIA6Tz3ejCvEFUUB4', // For "[CONFIDENTIAL] Student Database"
 
   // --- Folder IDs ---
-  folderId_receipts: '1Lz5FvbuToCJmIWCuBf3SDNZ8kapxkBxZ',
-  folderId_emailTemplates: '1S1RRlYvj8t2g_nUGupNuRIRPyY-rIeNP', // Optional, but good for organization
+  folderId_receipts: '1UGhJvsulQ02Q0b6Ugr8zLzIIApg8Ptwp',
+  folderId_emailTemplates: '1H-69TXZjZVRkZM404kc5IyLMCzc8gwO-', // Optional, but good for organization
 
   // --- Standard Pledge Amounts (PKR) ---
   pledgeAmounts: {
     oneMonth: 25000,
-    oneSemester: 150000,
-    oneYear: 300000,
-    fourYears: 1200000
+    oneSemester: 135000,
+    oneYear: 270000,
+    fourYears: 1080000
   },
 
   // --- AI Configuration ---
@@ -47,31 +47,37 @@ const SHEETS = {
     cols: {
       timestamp: 1,         // Column A
       donorEmail: 2,          // Column B
-      donorName: 3,           // Column C
-      affiliation: 4,         // Column D
-      mobile: 5,              // Column E
-      cityCountry: 6,         // Column F
-      isZakat: 7,             // Column G
-      studentPref: 8,         // Column H
-      programPref: 9,         // Column I
-      degreePref: 10,         // Column J
-      duration: 11,           // Column K
-      reqReceipt: 12,         // Column L
+      donorName: 3,           // Column C: Name
+      affiliation: 4,         // Column D: School/ College of Contributor
+      mobile: 5,              // Column E: Mobile Contact
+      cityCountry: 6,         // Column F: City / Country
+      isZakat: 7,             // Column G: Are you donating as Zakat?
+      studentPref: 8,         // Column H: Student Support Preference
+      programPref: 9,         // Column I: Program Support - Preference
+      degreePref: 10,         // Column J: Degree Support - Preference
+      // --- [V59] Subscription Form Fields ---
+      pledgeType: 11,         // Column K: Pledge Type (One-Time / Monthly Recurring)
+      monthlyAmount: 12,      // Column L: Monthly Contribution Amount
+      monthlyDuration: 13,    // Column M: Number of Months
+      numStudents: 14,        // Column N: Number of Students to Support
+      duration: 15,           // Column O: Select the Duration for Hostel Support
+      reqReceipt: 16,         // Column P: Requirement of Receipt
       // --- Manually Added Columns in the RAW Sheet ---
-      pledgeId: 13,           // Column M -> CRITICAL UPDATE: Reflects new column position.
-      status: 14,             // Column N -> CRITICAL UPDATE: Reflects new column position.
-      proofLink: 15,          // Column O -> CRITICAL UPDATE: Reflects new column position.
-      dateProofReceived: 16,  // Column P -> CRITICAL UPDATE: Reflects new column position.
-      notes: 17,              // Column Q -> CRITICAL UPDATE: Reflects new column position.
-      cmsIdAssigned: 18,      // Column R -> For volunteer to enter student ID.
-      amountAllocated: 19,     // Column S -> For volunteer to enter amount.
-      actualTransferDate: 20,  // Column T -> Extracted date or "As per attached receipt"
-      receiptMessageId: 21,    // Column U -> For Audit Trail (Gmail Message ID)
-      pledgeEmailId: 22,       // Column V -> Initial Pledge Confirmation ID (for threading)
+      pledgeId: 17,           // Column Q: PLEDGE-YYYY-NNN
+      status: 18,             // Column R: Current status
+      proofLink: 19,          // Column S: Proof of Payment
+      dateProofReceived: 20,  // Column T: Date Proof Received
+      notes: 21,              // Column U: Notes
+      cmsIdAssigned: 22,      // Column V: For volunteer to enter student ID
+      amountAllocated: 23,    // Column W: For volunteer to enter amount
+      aiComments: 24,         // Column X: AI Comments
+      receiptMessageId: 25,   // Column Y: Donor Receipt Message ID (Gmail)
+      pledgeEmailId: 26,      // Column Z: Pledge Confirmation Message ID (for threading)
       // --- V2: Multi-Receipt Support ---
-      verifiedTotalAmount: 23, // Column W: Sum of all verified receipts
-      balanceAmount: 24,       // Column X: Cash Balance (Verified - Allocated)
-      pledgeOutstanding: 25    // Column Y: Pledge GAP (Pledge Amount - Verified)
+      verifiedTotalAmount: 27, // Column AA: Sum of all verified receipts
+      balanceAmount: 28,       // Column AB: Cash Balance (Verified - Allocated)
+      pledgeOutstanding: 29,   // Column AC: Pledge GAP (Pledge Amount - Verified)
+      actualTransferDate: 30   // Column AD: Latest Transfer Date from Receipt (auto-populated)
     }
   },
   // --- Donations Tracker (QUERY View) ---
@@ -134,7 +140,8 @@ const SHEETS = {
       donorNotifyDate: 15,     // Column O (Final Loop Close)
       studentConfirmId: 16,    // Column P (Student Confirmation - Future)
       studentConfirmDate: 17,   // Column Q (Student Confirmation - Future)
-      batchId: 18            // Column R [NEW] Shared ID for Batch Allocations
+      batchId: 18,           // Column R [NEW] Shared ID for Batch Allocations
+      installmentId: 19      // Column S [V59.3] Monthly subscription installment reference
     }
   },
   log: {
@@ -155,6 +162,69 @@ const SHEETS = {
       newValue: 7,
       metadata: 8
     }
+  },
+  // --- [V59.3] AI Audit Log for tracking AI analysis ---
+  aiAuditLog: {
+    name: 'AI Audit Log',
+    cols: {
+      timestamp: 1,          // A: When AI was called
+      pledgeId: 2,           // B: PLEDGE-YYYY-NNN
+      sender: 3,             // C: Email sender
+      subject: 4,            // D: Email subject
+      category: 5,           // E: AI category (RECEIPT, QUESTION, etc.)
+      summary: 6,            // F: AI summary
+      receiptsFound: 7,      // G: Number of valid receipts
+      totalAmount: 8,        // H: Total verified amount
+      confidence: 9,         // I: AI confidence score
+      receiptLinks: 10,      // J: Links to receipt files
+      rawResponse: 11,       // K: Full AI response (JSON)
+      processingTime: 12,    // L: Time taken (ms)
+      success: 13            // M: TRUE/FALSE
+    }
+  },
+  // --- [V59] Monthly Pledge Subscription Sheets ---
+  monthlyPledges: {
+    name: 'Monthly Pledges',
+    cols: {
+      subscriptionId: 1,      // Column A: PLEDGE-YYYY-NNN (same as pledgeId, no separate SUB-)
+      pledgeId: 2,            // Column B: FK to Donations (same value as subscriptionId)
+      donorEmail: 3,          // Column C
+      donorName: 4,           // Column D
+      monthlyAmount: 5,       // Column E: PKR per month
+      numStudents: 6,         // Column F
+      durationMonths: 7,      // Column G: Total commitment
+      startDate: 8,           // Column H: First payment due
+      nextDueDate: 9,         // Column I: Computed
+      paymentsReceived: 10,   // Column J: Count
+      paymentsExpected: 11,   // Column K: Elapsed months
+      amountReceived: 12,     // Column L: Sum verified
+      amountExpected: 13,     // Column M: monthly × expected
+      status: 14,             // Column N: Active/Overdue/Completed
+      lastReminderDate: 15,   // Column O
+      lastReceiptDate: 16,    // Column P
+      chapter: 17,            // Column Q
+      linkedStudentIds: 18,   // Column R: Comma-separated CMS IDs
+      notes: 19,              // Column S
+      welcomeEmailId: 20,     // Column T [V59.3] Thread root for all subscription emails
+      completionEmailId: 21   // Column U [V59.3] Final completion email ID
+    }
+  },
+  installments: {
+    name: 'Pledge Installments',
+    cols: {
+      installmentId: 1,       // Column A: PLEDGE-2025-001-M03 (pledgeId + month suffix)
+      subscriptionId: 2,      // Column B: FK to Monthly Pledges (same as pledgeId)
+      monthNumber: 3,         // Column C: 1, 2, 3...
+      dueDate: 4,             // Column D
+      status: 5,              // Column E: Pending/Reminded/Received/Missed
+      receiptId: 6,           // Column F: FK to Receipt Log
+      amountReceived: 7,      // Column G
+      receivedDate: 8,        // Column H
+      reminderCount: 9,       // Column I: 0, 1, 2
+      lastReminderDate: 10,   // Column J
+      reminderEmailId: 11,    // Column K [V59.3] Last reminder message ID
+      receiptConfirmId: 12    // Column L [V59.3] Receipt confirmation message ID
+    }
   }
 };
 
@@ -173,10 +243,10 @@ const SHEETS = {
 // -----------------------------------------------------------------------------------------
 
 const EMAILS = {
-  ddHostels: 'ddhostels@university.edu',
+  ddHostels: 'ddhostels@nust.edu.pk',
   uao: '',
-  processOwner: 'nustlifelinecampaign@gmail.com', // The "From" address for automated emails
-  alwaysCC: ['nustlifelinecampaign@gmail.com']     // Default email to ALWAYS CC on every email
+  processOwner: 'sohail.sarwar@seecs.edu.pk', // The "From" address for automated emails
+  alwaysCC: ['nustlifelinecampaign@gmail.com', 'sohail.sarwar@seecs.edu.pk']     // Default email to ALWAYS CC on every email
 };
 
 
@@ -188,7 +258,23 @@ const EMAILS = {
 const MAPPINGS = {
   chapterLeads: {
     'Test': ['uk.lead1@email.com', 'uk.lead2@email.com'], // Example of multiple leads
-    'Other': ['default_lead@email.com'] // Fallback for unlisted chapters
+    'Other': ['irtizaali@gmail.com', 'uaurakzai@gmail.com', 'zulqarnain.ahmad@gmail.com', 'haroonraees@gmail.com', 'abc.huraira@gmail.com', 'khurrum@itelsol.com', 'rasool.ahmad@gmai.com', 'president.ksa@alumni.nust.edu.pk', 'maamerzaman@gmail.com', 'sanamay1@gmail.com'] // Fallback for unlisted chapters
+  },
+
+  // --- [V59] Subscription Configuration ---
+  subscription: {
+    // Reminder Schedule (days relative to due date)
+    reminderDays: [0, 7],             // Day 0: due date, Day +7: gentle reminder
+    maxReminders: 2,                   // Stop after 2 reminders
+    overdueThresholdDays: 14,          // Mark as Overdue after this many days
+    lapsedThresholdDays: 30,           // Mark as Lapsed after this many days
+
+    // Hostel Intimation Mode: 'individual' | 'batched' | 'both'
+    hostelIntimationMode: 'both',
+    batchIntimationDay: 10,            // Day of month to send batched intimation
+
+    // Student Linking
+    allowStudentChange: true           // Whether donors can change linked students
   }
 };
 
@@ -199,14 +285,23 @@ const MAPPINGS = {
 // To get the ID, open the Google Doc and copy the long string of characters from the URL.
 
 const TEMPLATES = {
-  pledgeConfirmation: '1WsVPRjz0QFNcYVoaQXASkH3UJtdmbug82TQ9fqPE46Y',
-  hostelVerification: '1t666h1OjFtqlippCnXiVUGmlG-A0yCpTwEfMG5HP6EM',
-  donorAllocationNotification: '1uX6rgb9EMr5HlwhzewDN9LvEEjHcUJJ3plH6B55GuRk', // Placeholder
-  hostelMailto: '1q7evCTAghHIE3ym3oA23JsN1UWYRbpd-f-6aUfENQ-w', // [NEW] For Mailto Link Body
+  // --- Core Templates (from Production) ---
+  pledgeConfirmation: '18uGt2E36TUyR1nPy0gwrFtCps8ct8VnZd0K8aqTW-T4',
+  hostelVerification: '1am2-qVGLXE2ALCnQR6MQK5hUfeRURaHwRXyH0RjylYQ',
+  donorAllocationNotification: '1pEqEi8dipiiqvHgj-_h28nEe0eRyt39Ceje-rrc-z5U',
+  hostelMailto: '1beC3R7xnDAc8XH-pstaif-f2zOVX-fA4UjVzau7JkfY',
   finalDonorNotification: 'ENTER_FINAL_DONOR_NOTIFICATION_DOC_ID_HERE',
   studentPaymentNotification: 'ENTER_STUDENT_PAYMENT_NOTIFICATION_DOC_ID_HERE',
-  batchIntimationToHostel: '1eCeN4bWQ-t93plwpXvL5KQdQkJreSwNGUnylXvo-Sw4', // [RENAMED] Sent to Hostel (DD/UAO)
-  batchDonorMailtoBody: '1v1zzPYC3MqsOhDwr750hsSi2xQA3bZj3-sAqanzznkM' // [NEW] Template for the draft body when Hostel clicks the link
+  batchIntimationToHostel: '19-8SNfj34ZaYWUOyATFGzeEQPrp7ifhZvZ5W-A27evY',
+  batchDonorMailtoBody: '1X2jH_ZkIraOhmNXdPqdf2Aukd0J9mO4TMl1jKuOZBuU',
+
+  // --- [V59] Subscription Email Templates (from Dev) ---
+  subscriptionWelcome: '1XQEtiV8fqSLnt0dCEY6Klce8df0qOobPlVu0eP5RrL8',
+  subscriptionReminder: '1ChoPRqv0uvlCb8OFJlTw23NA6jx5oFnf7EJdjpOvqZc',
+  subscriptionReceiptConfirm: '1P94dFVX5vUkxGgOWSsjOICAVvB1dwi__aggtQT2RSLw',
+  subscriptionOverdue: '1K4j9Tu8qYrmoFHy9y9uTCVWUAsou_cEI8JWZSVJEP3k',
+  subscriptionCompleted: '1IZDqduRIfcBiPQOWCSlORF1X6_irF8VTdLsu0QojnBI',
+  subscriptionHostelIntimation: '1LJW9JKIDV7yo088Z2jV54nL_mQ8Gwbi0cRzUSVJcCI8'
 };
 
 // SECTION 7: FORM QUESTION TITLES (KEYS)
@@ -219,5 +314,11 @@ const FORM_KEYS = {
   donorName: 'Name',
   donorEmail: 'Email Address',
   country: 'City / Country (of Contributor)',
-  duration: 'Select the Duration for Hostel Support'
+  duration: 'Select the Duration for Hostel Support',
+
+  // --- [V59] Subscription Form Fields ---
+  pledgeType: 'Pledge Type',                          // 'One-Time' or 'Monthly Recurring'
+  monthlyAmount: 'Monthly Contribution Amount',       // PKR per month
+  monthlyDuration: 'Number of Months',                // Duration in months
+  numStudents: 'Number of Students to Support'        // How many students
 };
